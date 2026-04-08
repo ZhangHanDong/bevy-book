@@ -1,0 +1,16 @@
+[book]
+authors = ["AlexZ"]
+language = "zh"
+src = "src"
+title = "Bevy 之书"
+description = "面向 Rust 开发者的 Bevy 引擎深度概念书"
+
+[build]
+build-dir = "book"
+
+[output.html]
+default-theme = "navy"
+preferred-dark-theme = "navy"
+git-repository-url = ""
+additional-css = ["mermaid.css"]
+additional-js = ["mermaid.min.js", "mermaid-init.js"]
