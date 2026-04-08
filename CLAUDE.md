@@ -27,41 +27,6 @@
 
 **所有章节写作和修订必须使用 `/tech-writer` skill。** 这是强制要求，不可跳过。
 
-### 写作流程 (tech-writer 三阶段)
-
-#### Phase 1: Research (研究)
-- 阅读 Bevy 源码中对应模块，验证每个事实
-- 构建因果链：不是"这个 struct 有这些字段"，而是"为什么选择这些字段、如果换一种设计会怎样"
-- 材料分类标签：Fact（事实）、Causal Analysis（因果分析）、Assessment（评估）、Insight（洞察）
-
-#### Phase 2: Write (写作)
-
-**Step 0: Budget Declaration (预算声明) — 每章必须**
-
-写作前先声明预算，确认后才能动笔：
-```
-Type: book-chapter
-Word budget: 5000-8000 words (不含代码块)
-Depth: 3 layers
-  L1: What — 这个机制是什么？（结构、API、代码）
-  L2: Why — 为什么这样设计？（动机、权衡、替代方案对比）
-  L3: How it connects — 这对引擎整体意味着什么？（跨章节关联、性能影响、设计哲学）
-```
-
-**深度层级要求**：
-- 每个小节（如 3.1, 3.2）必须覆盖 L1 + L2，关键小节覆盖 L3
-- L2 占正文篇幅至少 40%：设计动机、权衡分析、反面推理、替代方案对比
-- 禁止"代码 → 一句话总结"的浅层模式
-
-**正文密度规则**：
-- 抛开代码块、图表、表格后，纯正文（中文段落）不少于 3000 字
-- 每个代码块前后必须有 3-8 句中文段落解释 WHY，不能只有 WHAT
-- 每个表格/图表后必须有 2-4 句分析段落，不能让读者自己推断
-
-#### Phase 3: Review (审查)
-- 写完后启动 3 个并行 review agent：fact-checker、tech-reviewer、structure-editor
-- 修复所有 P0/P1 issue 后输出终稿
-
 ### 章节结构模板
 
 ```markdown
