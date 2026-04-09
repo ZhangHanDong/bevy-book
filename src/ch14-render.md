@@ -36,9 +36,9 @@ graph LR
     RenderWorld -. "Frame N 渲染" .-> Parallel
 ```
 
-*图 14-1: 双 World 架构与流水线并行*
+*图 14-1: 双 World 架构与 pipelined rendering 并行示意*
 
-解决方案：Main World 拥有数据的 `&mut` 权限，Render World 拥有自己的副本。两者通过 Extract 阶段做一次**单向拷贝**，之后各自独立运行——Main World 处理下一帧逻辑，Render World 渲染当前帧。
+解决方案：Main World 拥有数据的 `&mut` 权限，Render World 拥有自己的副本。两者通过 Extract 阶段做一次**单向拷贝**，之后各自独立运行。在默认更新路径中，Main Schedule 先执行，随后才进行 Extract 和 RenderApp 更新；如果额外启用 `PipelinedRenderingPlugin`，渲染还能与后续帧的模拟并行重叠。
 
 ```rust
 // 源码: crates/bevy_render/src/lib.rs
@@ -53,7 +53,7 @@ pub struct RenderApp;
 > 使得 "共享可变" 成为编译错误，Bevy 不是绕过这个限制，而是顺应它——
 > 通过数据拷贝换取安全的并行执行。这比传统引擎的锁机制更高效、更安全。
 
-双 World 架构的时序值得仔细理解。Extract 阶段发生在每帧的特定时刻：Main World 的 `PostUpdate` 之后、下一帧的 `PreUpdate` 之前。在这个时间窗口中，Main World 被"暂停"——所有系统都已执行完毕，World 处于一致的状态。Extract 系统获得 Main World 的**只读**访问权（通过 `Extract<>` 系统参数），将渲染所需的数据拷贝到 Render World。一旦 Extract 完成，Main World 和 Render World 就完全解耦——Main World 开始处理下一帧的逻辑，Render World 在独立线程上处理当前帧的渲染。这意味着渲染的内容总是"落后"一帧——玩家在第 N 帧看到的是第 N-1 帧的数据。在 60fps 的游戏中，这 16ms 的延迟通常不可感知，但对于 VR 等延迟敏感的场景，需要特别注意。
+双 World 架构的时序值得仔细理解。在默认模式下，Bevy 会先运行 Main App 的默认 Schedule，然后对每个 SubApp 执行 `extract`，再运行 SubApp 自己的 Schedule。也就是说，Main World 在本帧 `PostUpdate` 中产生的结果，会在同一轮更新中被提取到 Render World。只有在额外启用 `PipelinedRenderingPlugin` 时，渲染才会移到不同线程，与第 N+1 帧模拟重叠执行；这时读者可以把它理解为"渲染相对模拟存在约一帧流水线延迟"。因此，"总是落后一帧"不是双 World 本身的普遍结论，而是 pipelined rendering 的时序特征。
 
 如果不使用双 World，Bevy 有哪些替代方案？一种是"加锁"——用 RwLock 保护共享数据，渲染线程读取、游戏线程写入。但锁的竞争会导致两个线程相互等待，实际并行度很低。另一种是 "copy-on-write"——只在数据被修改时才拷贝，节省不变数据的拷贝开销。Bevy 的 ExtractResource 实际上使用了 `is_changed()` 检测来实现类似的优化——只有变化的数据才会被重新拷贝。完整的 copy-on-write 语义需要更复杂的引用计数或版本号机制，目前 Bevy 选择了更简单直接的"每帧全量拷贝 + 变更检测优化"策略。
 
@@ -182,13 +182,13 @@ graph LR
 
 *图 14-2: Extract 数据流示意*
 
-Extract 的拷贝开销是双 World 架构的主要性能代价。83+ 次 Extract 操作意味着每帧都有大量的数据复制。在一个拥有 10 万个渲染实体的场景中，仅 Transform 的提取就需要复制 10 万个矩阵（每个 48 字节 `Affine3A`），总计约 4.8MB 的数据搬运。ExtractResource 的 `is_changed()` 优化缓解了 Resource 级别的冗余拷贝，但 ExtractComponent 通常每帧都会遍历所有匹配实体。这就是 ExtractInstance 存在的原因——它将结果存储在 `HashMap` Resource 中而非逐实体写入 Component，避免了在 Render World 中维护实体对应关系的开销。在实际性能分析中，Extract 阶段通常占据帧时间的 5-15%，这是用于换取安全并行的"成本"。对于对帧时间极度敏感的应用，可以考虑自定义 Extract 系统，只提取真正变化的数据，利用第 10 章的 `Changed<T>` 过滤器进一步减少拷贝量。
+Extract 的拷贝开销是双 World 架构的主要性能代价。83+ 次 Extract 操作意味着每帧都有大量的数据复制。在一个拥有 10 万个渲染实体的场景中，仅 Transform 的提取就需要复制 10 万个矩阵（每个 48 字节 `Affine3A`），总计约 4.8MB 的数据搬运。ExtractResource 的 `is_changed()` 优化缓解了 Resource 级别的冗余拷贝，但 ExtractComponent 通常每帧都会遍历所有匹配实体。这就是 ExtractInstance 存在的原因——它将结果存储在 `HashMap` Resource 中而非逐实体写入 Component，避免了在 Render World 中维护实体对应关系的开销。具体成本会随着提取的数据量、平台和启用的渲染特性显著变化，源码本身并没有给出统一的帧时间占比。对于对帧时间极度敏感的应用，可以考虑自定义 Extract 系统，只提取真正变化的数据，利用第 10 章的 `Changed<T>` 过滤器进一步减少拷贝量。
 
 **要点**：三种提取方式（Component、Resource、Instance）覆盖不同场景。ExtractResource 利用 Changed 检测避免冗余拷贝。全引擎 83+ 次 Extract 形成完整的数据同步管线。
 
-## 14.3 RenderSystems：27+ 阶段的渲染管线
+## 14.3 RenderSystems：20 个核心阶段的渲染管线
 
-Render World 的主 Schedule 是 `Render`，其中通过 `RenderSystems` 枚举定义了顶层阶段和嵌套子阶段，共 **20+ 个** SystemSet：
+Render World 的主 Schedule 是 `Render`，其中通过 `RenderSystems` 枚举定义了顶层阶段和嵌套子阶段，共 **20 个** SystemSet：
 
 ```rust
 // 源码: crates/bevy_render/src/lib.rs (简化)
@@ -277,7 +277,7 @@ impl Render {
 
 渲染管线之所以需要如此多的有序阶段，是因为 GPU 编程有严格的数据准备顺序。Mesh 数据必须在 Draw Call 之前上传到 GPU 缓冲区；材质必须在绑定 Bind Group 之前被特化（Specialize）；排序必须在 Queue 之后、Render 之前完成。这些约束是硬件驱动的，不可重排。通过将每个阶段建模为 SystemSet（第 9 章），Bevy 让自定义渲染代码可以自然地"插入"到管线的任意位置——例如后处理效果在 `Render` 阶段添加系统，自定义材质在 `Specialize` 阶段注册。这种统一性是 ECS 架构的巨大优势：游戏开发者不需要学习一套完全不同的渲染管线 API，只需理解 System、SystemSet 和 Schedule 这些已经熟悉的 ECS 概念。
 
-**要点**：RenderSystems 定义了 20+ 个有序阶段，使用 SystemSet + chain() 建立依赖关系。渲染管线的扩展机制与游戏逻辑完全一致——都是向 Schedule 添加 System。
+**要点**：RenderSystems 定义了 20 个有序阶段，使用 SystemSet + chain() 建立依赖关系。渲染管线的扩展机制与游戏逻辑完全一致——都是向 Schedule 添加 System。
 
 ## 14.4 实体同步：SyncToRenderWorld
 
@@ -337,7 +337,7 @@ RenderStartup 和 RenderState 的恢复机制展示了 ECS 在处理外部硬件
 1. **双 World** 是 Rust 所有权模型的自然推论——拷贝数据换取安全并行
 2. **Extract 模式** 通过三种 trait（Component、Resource、Instance）实现 83+ 次跨 World 数据同步
 3. **ExtractResource** 内部利用 `is_changed()` 避免冗余拷贝
-4. **RenderSystems** 定义 20+ 个有序阶段，复用 Schedule 的系统编排能力
+4. **RenderSystems** 定义 20 个有序阶段，复用 Schedule 的系统编排能力
 5. **SyncToRenderWorld** 建立跨 World 的实体映射
 6. **RenderScheduleOrder** 用 Resource 驱动调度顺序
 

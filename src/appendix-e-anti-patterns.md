@@ -15,8 +15,8 @@ fn game_system(
     time: Res<Time>,
     input: Res<ButtonInput<KeyCode>>,
     mut commands: Commands,
-    mut events: EventWriter<GameEvent>,
-    audio: Res<Audio>,
+    mut messages: MessageWriter<GameMessage>,
+    asset_server: Res<AssetServer>,
     // ... 还在增加
 ) {
     // 200 行逻辑
@@ -28,9 +28,9 @@ fn game_system(
 ```rust
 // 正确: 职责分离
 fn movement_system(mut query: Query<(&mut Position, &Velocity)>, time: Res<Time>) { ... }
-fn combat_system(mut query: Query<(&mut Health, &Attack)>, mut events: EventWriter<DamageEvent>) { ... }
+fn combat_system(mut query: Query<(&mut Health, &Attack)>, mut messages: MessageWriter<DamageMessage>) { ... }
 fn input_system(input: Res<ButtonInput<KeyCode>>, mut commands: Commands) { ... }
-fn scoring_system(mut score: ResMut<Score>, events: EventReader<ScoreEvent>) { ... }
+fn scoring_system(mut score: ResMut<Score>, mut messages: MessageReader<ScoreMessage>) { ... }
 ```
 
 **为什么**：小系统更容易并行（数据访问冲突更少），更容易测试，更容易复用。
@@ -75,20 +75,20 @@ fn react_to_health(query: Query<&Health, Changed<Health>>) {
 }
 ```
 
-**修正**：结合 `Added` 处理首次添加，或使用 Event 明确通知。
+**修正**：结合 `Added` 处理首次添加，或使用 Message / Observer 明确通知。
 
 ```rust
-// 正确: 用 Event 替代 Changed 做明确通知
+// 正确: 用 Message 替代 Changed 做明确通知
 fn damage_system(
     mut health: Query<&mut Health>,
-    mut events: EventWriter<HealthChanged>,
+    mut messages: MessageWriter<HealthChanged>,
 ) {
     // 修改 health 时明确发送事件
-    events.write(HealthChanged { entity, old, new });
+    messages.write(HealthChanged { entity, old, new });
 }
 ```
 
-**为什么**：`Changed<T>` 的语义是"本 Tick 内 `DerefMut` 被调用过"——它不区分值是否真的变了，也可能因为系统执行顺序而遗漏。对于重要的业务逻辑，明确的 Event 更可靠。
+**为什么**：`Changed<T>` 的语义是"本 Tick 内 `DerefMut` 被调用过"——它不区分值是否真的变了，也可能因为系统执行顺序而遗漏。对于重要的业务逻辑，明确的 Message 或 Observer Event 更可靠。
 
 ---
 

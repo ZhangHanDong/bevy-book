@@ -75,7 +75,7 @@ pub trait Plugin: Downcast + Any + Send + Sync {
 
 ```mermaid
 graph TD
-    A["App::add_plugins(MyPlugin)"] --> B["build()<br/>立即执行：注册 System、Resource、Event"]
+    A["App::add_plugins(MyPlugin)"] --> B["build()<br/>立即执行：注册 System、Resource、Message"]
     B -->|"app.run() 之后"| C{"ready()?<br/>轮询：Plugin 是否完成异步初始化"}
     C -->|"全部 ready"| D["finish()<br/>所有 Plugin build 完成后执行"]
     D --> E["cleanup()<br/>最后的清理机会"]
@@ -94,28 +94,26 @@ pub fn my_plugin(app: &mut App) {
 
 ### Plugin 在引擎中的分布
 
-Bevy 引擎内部有 **211 个 Plugin 实现**，分布在 43 个 crate 中：
+如果按当前源码树搜索 `impl Plugin for`，可以看到 Plugin 实现横跨
+**43 个 crate**。精确数量会随提交变化，但分布特征很稳定：渲染相关 crate
+最密集，框架层和诊断/工具层也大量使用 Plugin 组织功能。
 
 ```
-bevy_pbr           ████████████████████████  22 个
-bevy_render         ██████████████████████   20 个
-bevy_feathers       ████████████████         14 个
-bevy_core_pipeline  ████████████████         12 个
-bevy_post_process   ████████████             10 个
-bevy_dev_tools      ████████                  8 个
-其他 37 个 crate    ████████████████████... 125 个
+渲染层: bevy_render / bevy_pbr / bevy_core_pipeline / bevy_post_process
+框架层: bevy_app / bevy_diagnostic / bevy_dev_tools
+功能层: bevy_sprite_render / bevy_ui_widgets / ...
 ```
 
-*图 2-2: Plugin 在各 crate 中的分布*
+*图 2-2: Plugin 在源码树中的分布趋势*
 
 每个 Plugin 在 `build()` 中做的事情大同小异：
 
 1. 注册 Component 类型（通过 `app.register_type::<T>()`）
 2. 插入 Resource（通过 `app.insert_resource()`）
 3. 添加 System 到特定 Schedule（通过 `app.add_systems()`）
-4. 添加 Event 类型（通过 `app.add_event::<T>()`）
+4. 添加 Message 类型（通过 `app.add_message::<T>()`）
 
-**要点**：Plugin 是 Bevy 的组装契约——每个 crate 通过 Plugin 将自己的 System、Resource、Event 注册到 App 中。
+**要点**：Plugin 是 Bevy 的组装契约——每个 crate 通过 Plugin 将自己的 System、Resource、Message 等能力注册到 App 中。
 
 ## 2.3 PluginGroup 与 DefaultPlugins
 
@@ -189,7 +187,7 @@ type ExtractFn = Box<dyn FnMut(&mut World, &mut World) + Send>;
 
 每个 SubApp 拥有自己的 `World` 和 `Schedule`，通过 `ExtractFn` 与 Main World 交换数据。
 
-Extract 的执行时机值得深入理解。在每帧的主循环中，Extract 发生在 Main World 完成当前帧的所有 Schedule（从 First 到 Last）之后、Render World 开始执行渲染 Schedule 之前。在 Extract 阶段，Main World 被短暂地借给 `ExtractFn`，Render World 同时以 `&mut World` 的方式提供给同一个闭包——此时两个 World 都不在执行各自的 System，不存在并发访问。`ExtractFn` 将渲染需要的数据（如 Transform、可见性、材质参数）从 Main World 复制或移动到 Render World。Extract 完成后，Main World 立即开始执行下一帧的逻辑，而 Render World 则在另一个线程上执行 Prepare → Queue → Render 等阶段。这种"流水线"设计意味着逻辑帧 N+1 和渲染帧 N 可以并行执行。代价是渲染总是比逻辑晚一帧——但这在游戏中几乎不可察觉，换来的是显著的吞吐量提升。如果不采用 SubApp 分离，所有渲染工作都必须在同一帧内串行完成，CPU 和 GPU 的利用率都会大幅降低。
+Extract 的执行时机值得深入理解。在默认更新路径中，Main App 会先跑完当前轮次的默认 Schedule，然后对每个 SubApp 依次执行 `extract` 和 `update`。也就是说，Extract 发生在 Main World 完成当前帧逻辑之后、Render SubApp 开始执行自己的 Schedule 之前。在 Extract 阶段，Main World 被短暂地借给 `ExtractFn`，Render World 同时以 `&mut World` 的方式提供给同一个闭包——此时两个 World 都不在执行各自的 System，不存在并发访问。`ExtractFn` 将渲染需要的数据（如 Transform、可见性、材质参数）从 Main World 复制或移动到 Render World。默认模式下，这一过程仍属于同一轮 `update`；只有额外启用 `PipelinedRenderingPlugin` 时，渲染才会移到另一线程，与下一轮模拟形成 N / N+1 的流水线重叠。SubApp 分离的核心价值首先是把逻辑世界和渲染世界、调度阶段与数据同步边界明确拆开，然后才是在可选流水线模式下进一步提升吞吐。
 
 ```
 App
@@ -250,7 +248,7 @@ graph TD
     end
 
     subgraph Main["每帧循环 (Main)"]
-        M1["First<br/>清理上帧事件缓冲"]
+        M1["First<br/>推进 message 队列"]
         M2["PreUpdate<br/>引擎内部更新(时间/输入)"]
         M3["RunFixedMainLoop"]
         M4["Update<br/>用户逻辑"]
@@ -279,7 +277,7 @@ graph TD
 
 | Schedule | 职责 | 谁在用 |
 |----------|------|--------|
-| **First** | 清理上一帧的事件缓冲 | 引擎内部 |
+| **First** | 推进消息队列、清理过期消息 | 引擎内部 |
 | **PreUpdate** | 更新时间、刷新输入状态 | `TimePlugin`, `InputPlugin` |
 | **RunFixedMainLoop** | 按固定步长执行 FixedUpdate | 物理、网络同步 |
 | **Update** | 用户游戏逻辑 | 用户 System |
@@ -289,7 +287,7 @@ graph TD
 
 用户的 System 通常注册到 `Update`（每帧逻辑）或 `FixedUpdate`（固定步长逻辑）。引擎内部的 System 分布在 `PreUpdate` 和 `PostUpdate` 中，对用户透明。
 
-为什么每个 Schedule 存在于这个特定的位置？这个顺序不是随意的，而是由数据依赖关系严格决定的。First 必须在最前面，因为上一帧的事件缓冲区需要在任何系统读取事件之前被清理——否则系统会看到过时的事件。PreUpdate 紧随其后，因为 Time 和 Input 的更新必须在用户逻辑之前完成——用户的 `Res<Time>` 和 `Res<ButtonInput>` 期望看到的是当前帧的值。FixedUpdate 被安排在 PreUpdate 之后、Update 之前，是因为物理模拟需要最新的时间信息但不应该依赖于用户逻辑的结果。PostUpdate 在 Update 之后，因为 Transform 传播和 UI 布局需要在用户修改了 Transform 或 UI 节点之后才能正确计算全局位置。如果 PostUpdate 在 Update 之前执行，用户在 Update 中修改的 Transform 要到下一帧才会传播——这会导致一帧的延迟和视觉上的"抖动"。Last 在最后面，为引擎提供一个帧结束的清理时机。这种分层设计也与第 9 章中讨论的 Schedule 调度器紧密相关——每个 Schedule 内部的 System 可以并行执行，但 Schedule 之间的顺序是严格串行的。
+为什么每个 Schedule 存在于这个特定的位置？这个顺序不是随意的，而是由数据依赖关系严格决定的。First 必须在最前面，因为 `message_update_system` 需要先推进消息队列状态，让本轮系统看到当前应消费的数据，并清理已经过期的消息。PreUpdate 紧随其后，因为 Time 和 Input 的更新必须在用户逻辑之前完成——用户的 `Res<Time>` 和 `Res<ButtonInput>` 期望看到的是当前帧的值。FixedUpdate 被安排在 PreUpdate 之后、Update 之前，是因为物理模拟需要最新的时间信息但不应该依赖于用户逻辑的结果。PostUpdate 在 Update 之后，因为 Transform 传播和 UI 布局需要在用户修改了 Transform 或 UI 节点之后才能正确计算全局位置。如果 PostUpdate 在 Update 之前执行，用户在 Update 中修改的 Transform 要到下一轮传播时才会反映到全局结果上。Last 在最后面，为引擎提供一个帧结束的清理时机。这种分层设计也与第 9 章中讨论的 Schedule 调度器紧密相关——每个 Schedule 内部的 System 可以并行执行，但 Schedule 之间的顺序是严格串行的。
 
 ### FixedUpdate 的追赶机制
 
@@ -355,7 +353,7 @@ bevy_ecs = "0.19"
 本章我们理解了 Bevy 应用的骨架：
 
 1. **App** 是一个 Builder，本身几乎不含逻辑
-2. **Plugin** 是模块化的契约，211 个实现遍布 43 个 crate
+2. **Plugin** 是模块化的契约，实现广泛分布于 43 个 crate
 3. **PluginGroup** 将 Plugin 打包，支持按需定制
 4. **SubApp** 通过所有权隔离实现并行 World
 5. **Main Schedule** 由 7 个有序阶段 + 嵌套的 FixedUpdate 组成

@@ -125,7 +125,7 @@ pub struct ComputedNode {
 
 `Node` → `ComputedNode` 的过程就是 "声明式布局属性" → "计算后的绝对值"。这是 ECS 中 Input Component → Computed Component 模式的典型应用。
 
-布局计算为什么放在 PostUpdate 而非 Update？这是一个深思熟虑的时序决策。Update 阶段是用户 System 修改 UI 属性的时机——改变按钮文本、切换面板可见性、调整列表项。如果布局计算也在 Update 中运行，就必须保证布局系统在所有 UI 修改系统之后执行，这需要繁琐的 ordering 约束。将布局推迟到 PostUpdate 确保了所有 Update 中的 UI 修改都已完成，布局只需计算一次就能得到最终结果。这种"先收集所有修改，再统一计算"的模式还有性能好处：如果一帧中多个 System 修改了同一个 Node 的不同属性，布局只计算一次而非多次。代价是 UI 修改的效果要延迟到下一帧才能在屏幕上看到——但在 60fps 下，这个延迟不可感知。
+布局计算为什么放在 PostUpdate 而非 Update？这是一个深思熟虑的时序决策。Update 阶段是用户 System 修改 UI 属性的时机——改变按钮文本、切换面板可见性、调整列表项。如果布局计算也在 Update 中运行，就必须保证布局系统在所有 UI 修改系统之后执行，这需要繁琐的 ordering 约束。将布局推迟到 PostUpdate 确保了所有 Update 中的 UI 修改都已完成，布局只需计算一次就能得到最终结果。这种"先收集所有修改，再统一计算"的模式还有性能好处：如果一帧中多个 System 修改了同一个 Node 的不同属性，布局只计算一次而非多次。在默认渲染路径中，这些 PostUpdate 里的结果会在同一轮更新后被提取并渲染；只有在启用 pipelined rendering 等额外流水线机制时，读者才可能观察到额外的帧级延迟。
 
 **要点**：布局在 PostUpdate 执行，用 taffy 引擎计算 Flexbox/Grid。Node 声明布局属性，ComputedNode 存储计算结果。
 

@@ -2,7 +2,7 @@
 
 > **导读**：几乎所有游戏都需要状态机——主菜单、游戏中、暂停、结算。Bevy 的
 > State 系统将有限状态机完全建立在 ECS 之上：状态值是 Resource，状态转换
-> 触发独立的 Schedule（OnEnter/OnExit），DespawnWhen 利用 Observer 自动
+> 触发独立的 Schedule（OnEnter/OnExit），DespawnWhen 利用状态转换 Message 自动
 > 清理实体，run_if(in_state(...)) 让系统只在特定状态下运行。
 
 ## 18.1 States trait：有限状态机的基石
@@ -203,7 +203,7 @@ Exit 从叶到根、Enter 从根到叶——这保证了子状态的清理在父
 
 **要点**：OnEnter/OnExit 是独立 Schedule，每个状态值一个。Exit 从叶到根，Enter 从根到叶。这保证了层级状态的正确初始化/清理顺序。
 
-## 18.4 DespawnWhen：Observer 驱动的实体清理
+## 18.4 DespawnWhen：StateTransition Message 驱动的实体清理
 
 状态转换时通常需要清理上一个状态的实体（如从 InGame 退出时销毁所有游戏实体）。Bevy 提供了 `DespawnWhen` 组件：
 
@@ -228,25 +228,25 @@ commands.spawn((
 // When GameState exits InGame, this entity is automatically despawned.
 ```
 
-实现原理：`DespawnWhen` 注册一个 Observer 监听 `StateTransitionEvent<S>` Message。当状态转换发生时，Observer 遍历所有带有 `DespawnWhen` 组件的实体，执行评估函数，匹配则销毁。
+实现原理：`DespawnWhen` 并不依赖 Observer。状态系统会写入 `StateTransitionEvent<S>` Message，`despawn_entities_when_state` 系统随后通过 `MessageReader<StateTransitionEvent<S>>` 读取最新的状态转换，再遍历所有带有 `DespawnWhen` 组件的实体，执行评估函数，匹配则销毁。`DespawnOnExit` 和 `DespawnOnEnter` 也是同一模式的特化版本。
 
 ```mermaid
 graph TD
     A["StateTransition:<br/>1. Apply NextState → State changes"] --> B["2. Send StateTransitionEvent&lt;GameState&gt;"]
-    B --> C["Observer 接收 Message"]
+    B --> C["System 读取 MessageReader"]
     C --> D["遍历 Query&lt;(Entity, &DespawnWhen&lt;GameState&gt;)&gt;"]
     D --> E{"evaluator(event) == true?"}
     E -- "是" --> F["commands.entity(entity).despawn()"]
     E -- "否" --> G["跳过"]
 ```
 
-*图 18-4: DespawnWhen Observer 驱动的实体清理*
+*图 18-4: DespawnWhen 基于状态转换 Message 的实体清理*
 
-这是 Observer 模式（第 12 章）在实际子系统中的应用——无需在 OnExit Schedule 中手动编写清理 System，只需在 spawn 时声明 "何时销毁"。
+这不是 Observer 模式（第 12 章）的直接复用，而是 Message + 普通 System 的声明式封装——无需在 OnExit Schedule 中手动编写清理 System，只需在 spawn 时声明 "何时销毁"。
 
 如果没有 DespawnWhen，开发者需要在每个 OnExit Schedule 中手动编写清理逻辑：查询所有属于当前状态的实体，逐一销毁。这种命令式清理容易遗漏——新增一种实体类型时忘记更新清理系统是常见错误，导致"幽灵实体"在状态转换后残留。DespawnWhen 将清理意图内聚到实体的 spawn 点——创建实体时就声明它的生命周期边界。这种"声明式生命周期"模式在 ECS 中特别有价值：实体的创建和销毁逻辑共同定位，审查代码时不需要在 spawn 和 despawn 系统之间来回跳转。
 
-**要点**：DespawnWhen/DespawnOnExit 利用 Observer 监听 StateTransitionEvent，自动清理状态关联实体。声明式而非命令式。
+**要点**：DespawnWhen/DespawnOnExit 通过 `StateTransitionEvent` Message + Reader 系统自动清理状态关联实体。声明式而非命令式。
 
 ## 18.5 run_if(in_state(...))：条件系统
 
@@ -294,9 +294,9 @@ cleanup_system.run_if(state_changed::<GameState>)
 1. **States** = `Clone + Eq + Hash + Debug + Send + Sync + 'static` 的值类型，存储为 Resource
 2. **三种状态类型**：States（手动）、SubStates（条件存在）、ComputedStates（自动派生）
 3. **OnEnter/OnExit** 是独立 Schedule，Exit 叶→根，Enter 根→叶
-4. **DespawnWhen** 利用 Observer 自动清理状态关联实体
+4. **DespawnWhen** 利用状态转换 Message 自动清理状态关联实体
 5. **in_state** 将 Resource 转化为 System 条件
 
-State 系统的优雅之处在于它完全由已有的 ECS 原语组合而成——Resource（状态值）、Schedule（OnEnter/OnExit）、Observer（DespawnWhen）、System Condition（in_state）。没有引入任何新的运行时机制。
+State 系统的优雅之处在于它完全由已有的 ECS 原语组合而成——Resource（状态值）、Schedule（OnEnter/OnExit）、Message（StateTransitionEvent）、System Condition（in_state）以及普通清理系统。没有引入任何新的运行时机制。
 
 下一章，我们将看到 UI 系统如何将每个 UI 元素建模为 Entity + Component，实现全 ECS 的用户界面。

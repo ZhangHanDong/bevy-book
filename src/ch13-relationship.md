@@ -201,8 +201,8 @@ let parent = world.spawn_empty().with_children(|p| {
 
 // method 3: via Commands
 commands.spawn_empty().with_children(|p| {
-    p.spawn(SpriteBundle::default());
-    p.spawn(TextBundle::default());
+    p.spawn((Sprite::default(), Transform::default()));
+    p.spawn(Text::new("child"));
 });
 ```
 

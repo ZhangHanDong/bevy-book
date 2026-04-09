@@ -6,14 +6,14 @@
 ## 第一部分：引擎全景（2 章）
 
 ### 第 1 章：Bevy 的设计哲学
-- 1.1 模块化：60 个 crate，按需组合
+- 1.1 模块化：58 个 crate，按需组合
 - 1.2 数据驱动：ECS 作为统一范式
 - 1.3 零 boilerplate：函数即系统
 - 1.4 Rust 适配性：所有权模型如何塑造引擎架构
 
 ### 第 2 章：App、Plugin 与主循环
 - 2.1 App 构建器模式与生命周期
-- 2.2 Plugin trait：211 个实现遍布 43 个 crate
+- 2.2 Plugin trait：实现广泛分布于 43 个 crate
 - 2.3 PluginGroup 与 DefaultPlugins
 - 2.4 SubApp：渲染子应用与并行 World
 - 2.5 Main Schedule 全景：First → PreUpdate → Update → PostUpdate → Last
@@ -87,7 +87,7 @@
 - 8.2 FunctionSystem：函数到系统的编译期转换
 - 8.3 SystemParam trait：GAT 驱动的参数注入
 - 8.4 `all_tuples!` 宏：0~16 参数的批量 impl
-- 8.5 全部 18 种 SystemParam 一览
+- 8.5 主要 SystemParam 类型一览
 - 8.6 ExclusiveSystem：`&mut World` 独占访问
 - 8.7 System Combinator：管道、适配、组合
 
@@ -162,7 +162,7 @@
 ### 第 14 章：渲染架构 — 双 World 与 Extract 模式
 - 14.1 RenderApp SubApp：独立 World 与 Schedule
 - 14.2 Extract 模式：83+ 次跨 World 数据同步
-- 14.3 RenderSystems：27+ 阶段的 SystemSet
+- 14.3 RenderSystems：20 个核心阶段的 SystemSet
 - 14.4 渲染中的 80+ Component 与 100+ Resource
 - 14.5 所有权模型如何自然驱动双 World 分离
 
@@ -207,7 +207,7 @@
 ### 第 20 章：PBR 渲染
 - 20.1 StandardMaterial 的 Change Detection 驱动 Shader 编译
 - 20.2 Light Clustering 作为 per-view Component
-- 20.3 22 个 Plugin 的注册链
+- 20.3 24+ 个 Plugin 的注册链
 - 20.4 ExtendedMaterial：trait 组合扩展材质
 
 ### 第 21 章：动画、场景与文本
@@ -265,7 +265,7 @@
 ## 附录
 
 - A. ECS 术语对照表 (英中)
-- B. 全部 18 种 SystemParam 速查
+- B. SystemParam 速查
 - C. 全部内置 Schedule / SystemSet 一览
 - D. StorageType 选择指南
 - E. 常见 ECS 反模式

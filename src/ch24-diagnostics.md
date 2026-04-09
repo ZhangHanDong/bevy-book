@@ -56,24 +56,26 @@ fn add_measurement(&mut self, measurement: DiagnosticMeasurement) {
   │  "fps"           → Diagnostic { ema: 59.8 }  │
   │  "frame_time"    → Diagnostic { ema: 16.7 }  │
   │  "entity_count"  → Diagnostic { ema: 1024 }  │
-  │  "cpu_usage"     → Diagnostic { ema: 45.2 }  │
+  │  "process/cpu_usage" → Diagnostic { ema: 45.2 } │
   └──────────────────────────────────────────────┘
 ```
 
 *图 24-1: DiagnosticsStore 结构*
 
-### 内置诊断插件
+### 常用诊断插件
 
 | 插件 | 路径 | 说明 |
 |------|------|------|
 | `FrameTimeDiagnosticsPlugin` | `fps`, `frame_time`, `frame_count` | 帧时间和 FPS |
 | `EntityCountDiagnosticsPlugin` | `entity_count` | 实体总数 |
-| `SystemInformationDiagnosticsPlugin` | `cpu_usage`, `mem_usage` | CPU/内存使用 |
+| `SystemInformationDiagnosticsPlugin` | `system/cpu_usage`, `system/mem_usage`, `process/cpu_usage`, `process/mem_usage` | CPU/内存使用（需 `sysinfo_plugin` feature） |
 | `LogDiagnosticsPlugin` | (输出) | 周期性打印诊断到日志 |
 
 ### Deferred 写入模式
 
 诊断数据通过 `Diagnostics` SystemParam（一个 `Deferred<DiagnosticsBuffer>`）写入，延迟到 `apply_deferred` 时才真正更新 `DiagnosticsStore`。这避免了在 System 执行期间对 DiagnosticsStore 的写锁竞争。
+
+需要注意的是，`DiagnosticsPlugin` 本身只负责初始化 `DiagnosticsStore`（以及在相关 feature 打开时初始化 `SystemInfo` Resource）。具体的 FPS、实体数、系统信息等指标，仍然要通过对应的诊断插件显式注册。
 
 为什么选择 EMA（指数移动平均）而非简单平均或中位数？游戏性能指标有一个独特特征：最近的测量值比历史值更有意义。简单平均对所有历史值一视同仁，当性能突然变化时（如加载新场景后帧率下降），需要很多帧才能让平均值反映实际情况。EMA 通过 smoothing factor 给近期值更高的权重，能更快速地响应性能变化，同时仍然平滑掉逐帧的随机抖动。Deferred 写入模式的设计与第 11 章的 Commands 思路一致——在并行执行阶段只收集数据到线程本地缓冲区，在 apply_deferred 时才统一写入 DiagnosticsStore。这避免了对 DiagnosticsStore Resource 的写锁争用，保证了诊断数据的收集不会成为并行执行的瓶颈。这种"采集零开销，汇总集中处理"的设计在监控系统中是标准实践，Bevy 将其自然地映射到了 ECS 的 Deferred 机制上。
 
@@ -295,7 +297,7 @@ app.add_plugins(FpsOverlayPlugin {
 
 本章我们了解了 Bevy 的四套诊断调试工具：
 
-1. **DiagnosticsStore**：基于 EMA 的性能指标体系，内置 FPS、实体数、CPU 使用率等诊断
+1. **DiagnosticsStore**：基于 EMA 的性能指标体系；FPS、实体数、系统信息等指标由各诊断插件按需注册
 2. **Gizmos**：即时模式调试绘制，零管理成本的可视化调试
 3. **Stepping**：系统级单步调试，精确控制 Schedule 执行
 4. **bevy_remote**：基于反射的远程 World 查询，JSON-RPC 2.0 协议
