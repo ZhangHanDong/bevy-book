@@ -1,9 +1,9 @@
 # 第 24 章：诊断与调试
 
-> **导读**：一个复杂的 ECS 引擎需要强大的诊断工具。本章介绍四套互补的
-> 调试机制：DiagnosticsStore 性能指标体系、Gizmos 调试可视化、Schedule
-> Stepping 系统级单步调试，以及 bevy_remote 的远程 World 查询（与第 22 章
-> 反射系统衔接）。
+> **导读**：一个复杂的 ECS 引擎需要强大的诊断工具。本章介绍五套互补的
+> 调试机制（DiagnosticsStore、Gizmos、Schedule Stepping、bevy_remote、
+> Schedule 可视化）与一个开发体验增强（Subsecond 代码热补丁）。它们共同
+> 构成 Bevy 从性能观测、调试到快速迭代的完整开发闭环。
 
 ## 24.1 DiagnosticsStore：性能指标体系
 
@@ -293,14 +293,87 @@ app.add_plugins(FpsOverlayPlugin {
 
 **要点**：Schedule 可视化帮助理解系统执行顺序，FPS Overlay 提供即时的帧率监控。
 
+## 24.6 Subsecond 热补丁：ECS 与代码替换的天然契合
+
+前面几节讨论的都是"观测"工具。本节讨论一个更激进的开发体验优化：**在不重启进程的前提下替换 System 函数体**。Bevy 0.17+ 通过可选的 `hotpatching` feature 集成了 Dioxus Labs 开发的 [Subsecond](https://crates.io/crates/subsecond) 热补丁系统。
+
+### 核心机制
+
+Subsecond 的思路是：用户代码在调用点包裹 `subsecond::call(|| { ... })`，运行时查询一张全局跳转表（`HashMap<u64, u64>`，键为旧函数地址、值为新地址）决定跳转到哪个版本。外部工具编译变化的代码生成单元后通过消息通道发送新跳转表，运行时原子替换——**不修改进程内存**。Release 模式下 `subsecond::call` 会早退为 `return f()`，跳转表完全不存在于生产构建中。
+
+### Bevy 的集成：把热补丁信号变成变更检测
+
+Bevy 通过 `bevy_ecs` 的 `hotpatching` feature 启用 Subsecond。集成引入了两个最小对象：
+
+```rust
+// 源码: crates/bevy_ecs/src/lib.rs:143
+#[cfg(feature = "hotpatching")]
+#[derive(Message, Default)]
+pub struct HotPatched;
+
+// 源码: crates/bevy_ecs/src/lib.rs:155
+#[cfg(feature = "hotpatching")]
+#[derive(Resource, Default)]
+pub struct HotPatchChanges;
+```
+
+`HotPatched` 是热补丁发生时推送的 Message。`HotPatchChanges` 是一个**零字段 Resource**——它不存储任何数据，存在的唯一目的是**借用第 10 章的 Tick 机制充当"热补丁时钟"**。每次收到补丁通知时 Bevy mutate 它以推进 change tick，Executor 派发 System 时比对 tick 决定是否刷新函数指针：
+
+```rust
+// 源码: crates/bevy_ecs/src/schedule/executor/multi_threaded.rs:480
+#[cfg(feature = "hotpatching")]
+if hotpatch_tick.is_newer_than(
+    system.get_last_run(),
+    context.environment.world_cell.change_tick(),
+) {
+    system.refresh_hotpatch();
+}
+```
+
+信号传播完全复用既有机制——无需回调、全局锁或状态机。
+
+```mermaid
+flowchart TD
+    A["外部工具<br/>发送新跳转表"] --> B["Subsecond 运行时<br/>原子替换 AddressMap"]
+    B --> C["Bevy 集成层<br/>mutate HotPatchChanges"]
+    C --> D["Executor 派发下一个 System"]
+    D --> E{"hotpatch_tick<br/>newer than<br/>system.last_run?"}
+    E -- "Yes" --> F["system.refresh_hotpatch()"]
+    E -- "No" --> G["复用缓存指针"]
+    F --> H["运行新版函数体"]
+    G --> H
+```
+
+*图 24-5: Subsecond 热补丁在 Bevy Executor 中的触发流程*
+
+### 为什么 ECS 的架构优势在这里显现
+
+Unreal 的 Live Coding 和 Unity 的 Assembly Reload 早已证明 OOP 引擎可以热重载——ECS 的优势不是"让热补丁成为可能"，而是让它**几乎不需要额外设计**。三个特征共同作用：System 的数据依赖通过 SystemParam 在函数签名中显式声明（第 8 章），持久状态绝大多数放在 Component/Resource 中而非闭包字段（`Local<T>` 是例外，但它由 `FunctionSystem` 包装器持有、不随补丁变化）；数据与行为彻底分离（第 1 章）让补丁只需替换函数指针，World 中的实体数据无需迁移；Executor 派发 System 之间的天然同步点（第 9 章）让函数指针替换无竞态，无需 stop-the-world。
+
+> **Rust 设计亮点**：Bevy 的 Subsecond 集成总共只引入一个 Message、一个空 Resource、一个 trait 方法。`HotPatchChanges` 本身不存数据，只借用 Tick 机制充当热补丁时钟——这是"正交机制复用"的典范。
+
+### 启动方式与已知陷阱
+
+启用步骤：打开 `bevy_ecs` 的 `hotpatching` feature，然后用 Dioxus CLI 的 `dx serve --hotpatch` 运行应用（CLI 负责编译 CGU 并推送跳转表）。几个**必须提前知道的陷阱**：
+
+1. **仅补丁 tip crate**（`main.rs` 所在 crate）。跨 crate 修改不支持——rustc 构建图非确定性，且修改转发泛型的函数会引发级联 codegen 变更。
+2. **System 签名与数据结构布局不能变**。修改 `Query` 过滤器、参数类型、`Component`/`Resource` 字段布局都需要完整重启。
+3. **Tip crate 的 thread-local 每次补丁后重置**，Subsecond 官方警告"复杂场景可能 crash 或 segfault"。
+4. **Release 模式绝不启用**：`HotPatchChanges` 读取路径包含 `unsafe`，官方注释明确要求此 feature 不应在 release 开启。
+
+实际使用中最频繁的改动（System 函数体内的数值调整、分支逻辑、bug 修复）恰好是 Subsecond 完美支持的场景。
+
+**要点**：Subsecond 通过跳转表实现代码热补丁，Bevy 用 `HotPatchChanges` 的变更检测 tick 把刷新信号传播到每个 System。
+
 ## 本章小结
 
-本章我们了解了 Bevy 的四套诊断调试工具：
+本章我们了解了 Bevy 的五套诊断调试工具和一个开发体验增强：
 
 1. **DiagnosticsStore**：基于 EMA 的性能指标体系；FPS、实体数、系统信息等指标由各诊断插件按需注册
 2. **Gizmos**：即时模式调试绘制，零管理成本的可视化调试
 3. **Stepping**：系统级单步调试，精确控制 Schedule 执行
 4. **bevy_remote**：基于反射的远程 World 查询，JSON-RPC 2.0 协议
 5. **Schedule 可视化**：系统执行顺序和依赖关系图
+6. **Subsecond 热补丁**：亚秒级代码热替换；通过 `HotPatched` Message + `HotPatchChanges` Resource 复用变更检测 Tick 机制
 
 下一章，我们将讨论 Bevy 的跨平台支持——从 no_std ECS 核心到 WASM 单线程模式。
