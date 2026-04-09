@@ -34,7 +34,7 @@ Bevy 不仅是一个游戏引擎，更是 Rust 类型系统与数据驱动架构
 
 1. **引擎全景**（第 1-2 章）——建立整体认知
 2. **ECS 内核**（第 3-10 章）——全书核心，从 World 到 Schedule 逐层剖析
-3. **通信与关系**（第 11-13 章）——Commands、Event/Observer、Hierarchy
+3. **通信与关系**（第 11-13 章）——Commands、Event、Message、Observer、Hierarchy
 4. **引擎子系统**（第 14-21 章）——展示 ECS 如何驱动渲染、UI、动画等
 5. **高级主题**（第 22-26 章）——Reflect、并发、跨平台、Rust 设计模式总结
 

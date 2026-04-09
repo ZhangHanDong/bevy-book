@@ -88,17 +88,25 @@ ECS 通过**组合**解决这两个问题：
 
 *图 1-2: OOP 继承 vs ECS 组合*
 
-在 Bevy 中，一个"玩家"和一个"子弹"的区别不在于类型，而在于它们挂载了哪些 Component：
+在 Bevy 中，一个实体到底"是什么"，不由继承层级决定，而由它挂载了哪些 Component 决定。官方 UI 示例里的按钮实体就是一个直接的例子：
 
 ```rust
-// 玩家：有位置、速度、生命值、玩家标记
-commands.spawn((Transform::default(), Velocity(Vec3::ZERO), Health(100), Player));
-
-// 子弹：有位置、速度、伤害值——没有继承关系
-commands.spawn((Transform::default(), Velocity(Vec3::new(0., 0., 100.)), Damage(10)));
+// 源码: examples/ui/widgets/button.rs:83
+(
+    Button,
+    Node {
+        width: px(150),
+        height: px(65),
+        justify_content: JustifyContent::Center,
+        align_items: AlignItems::Center,
+        ..default()
+    },
+    BorderColor::all(Color::WHITE),
+    BackgroundColor(Color::BLACK),
+)
 ```
 
-数据与行为彻底分离。Component 只存数据，System 只写逻辑。这种分离让 Bevy 能够自动分析 System 之间的数据依赖，实现**自动并行执行**——这是传统 OOP 引擎无法做到的。这种分离也使得热重载和编辑器集成更加自然——因为 Component 是纯数据，可以直接序列化、反射和可视化编辑，不需要像 OOP 对象那样处理虚函数表和方法绑定的复杂性。
+这里没有 `UIButton` 继承树，也没有"对象附带方法"的封装边界。按钮之所以是按钮，是因为它同时拥有 `Button`、`Node`、`BorderColor`、`BackgroundColor` 等组件。数据与行为彻底分离：Component 只存数据，System 只写逻辑。这种分离让 Bevy 能够自动分析 System 之间的数据依赖，实现**自动并行执行**；也让热重载、反射和编辑器集成更自然，因为 Component 是可序列化、可观察的纯数据。
 
 **要点**：ECS 不是 Bevy 的可选功能，而是引擎的统一范式。数据（Component）与行为（System）的分离使自动并行成为可能。
 
@@ -115,21 +123,22 @@ fn hello_world_system() {
 
 这就是一个合法的 System。没有 trait 要实现，没有 struct 要定义，没有生命周期要标注。一个普通的 Rust 函数，直接就能被 Bevy 调度执行。
 
-更实用的例子：
+更实用的例子来自官方 `remote/server.rs`：
 
 ```rust
-fn move_players(
-    mut query: Query<&mut Transform, With<Player>>,
+// 源码: examples/remote/server.rs:79
+fn move_cube(
+    mut query: Query<&mut Transform, With<Cube>>,
     time: Res<Time>,
 ) {
     for mut transform in &mut query {
-        transform.translation.x += 100.0 * time.delta_secs();
+        transform.translation.y = -cos(time.elapsed_secs()) + 1.5;
     }
 }
 ```
 
 函数签名本身就是**声明式的数据需求**：
-- `Query<&mut Transform, With<Player>>`：我需要所有带 `Player` 标记的实体的 `Transform`，可变访问
+- `Query<&mut Transform, With<Cube>>`：我需要所有带 `Cube` 标记的实体的 `Transform`，可变访问
 - `Res<Time>`：我需要只读访问全局 `Time` 资源
 
 Bevy 在编译期通过 trait 的泛型机制（`all_tuples!` 宏为 0~16 个参数生成实现）自动将这个函数包装成 `System`。运行时，调度器根据参数声明的读写权限判断哪些 System 可以并行。
@@ -188,17 +197,9 @@ ECS 的多 System 并行需要同时访问 World 的不同部分。Rust 的 `&mu
 
 **要点**：Rust 的所有权模型不是 Bevy 的障碍，而是其架构的驱动力。双 World、UnsafeWorldCell、Send + Sync 约束——这些设计都是所有权模型的自然产物。
 
-## 1.5 与其他引擎的设计理念对比
+## 本章小结
 
-| 维度 | Bevy | Unity | Godot | Unreal |
-|------|------|-------|-------|--------|
-| 核心范式 | ECS（纯组合） | OOP + 可选 ECS (DOTS) | OOP（节点树） | OOP（Actor 模型）|
-| 模块化 | 58 crate，按需组合 | 包管理器 | 单体 + GDExtension | 单体 + 插件 |
-| 脚本/逻辑 | Rust 函数 | C# 类 | GDScript/C# | C++/Blueprint |
-| 并行模型 | 自动并行（调度器） | 手动 Job System | 单线程为主 | 多线程（TaskGraph）|
-| 数据布局 | SoA 列式存储 | 混合 | 对象逐个分配 | 对象逐个分配 |
-| 热重载 | Asset 热重载 | 脚本热重载 | 脚本热重载 | 蓝图热重载 |
-
-Bevy 的独特之处不在于某个单一特性，而在于 **ECS + Rust 类型系统 + 模块化** 三者的深度结合。ECS 提供数据布局和并行能力，Rust 类型系统提供编译期安全保证，模块化提供灵活的裁剪能力。这三者相互增强，形成了 Bevy 独有的设计空间。
-
-**要点**：Bevy 的核心竞争力是 ECS + Rust + 模块化的三位一体，而非单一特性的优势。
+- Bevy 不是单体引擎，而是由 `bevy_app`、`bevy_ecs`、`bevy_render` 等 crate 组合出来的模块化体系。
+- ECS 不是 Bevy 的一个子系统，而是整个引擎的统一建模方式：对象、UI、光源、资源和逻辑都被压到同一套数据模型里。
+- “函数即系统”不是语法糖，而是把数据访问需求编码进函数签名，让调度器能据此做依赖分析和自动并行。
+- Rust 的所有权模型没有被 Bevy 绕开，反而直接塑造了双 World、`UnsafeWorldCell` 和 `Send + Sync` 这些核心架构决策。

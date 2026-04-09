@@ -303,15 +303,15 @@ cfg::conditional_send! {
 
 | 特性 | 多线程模式 | 单线程模式 |
 |------|-----------|-----------|
-| System 执行 | 并行 (MultiThreadedExecutor) | 顺序 (SimpleExecutor) |
-| TaskPool | 真正的线程池 | 单线程模拟 (`SingleThreadedTaskPool`) |
+| System 执行 | 并行 (`MultiThreadedExecutor`) | 顺序 (`SingleThreadedExecutor`) |
+| TaskPool | 真正的线程池 | 相同 `TaskPool` API，但底层是单线程后端 |
 | Future | 必须 `Send` | 不要求 `Send` |
 | par_iter | 多线程分批 | 退化为普通 iter |
-| NonSend | 限制主线程 | 无限制（一切都在主线程） |
+| NonSend | 限制主线程 | API 仍保留，但通常不再影响线程分派 |
 
 ```rust
 // 源码: crates/bevy_tasks/src/single_threaded_task_pool.rs (简化)
-// 单线程 TaskPool 在调用 scope 时直接顺序执行所有任务
+// 单线程模式下，公开类型仍然叫 TaskPool，只是后端实现退化为本地执行
 pub struct TaskPool {}
 
 impl TaskPool {
@@ -324,7 +324,7 @@ impl TaskPool {
 }
 ```
 
-**要点**：单线程模式通过 `ConditionalSend` trait 放松 Send 约束，所有任务在主线程顺序执行，适用于 WASM 等不支持多线程的平台。
+**要点**：单线程模式通过 `ConditionalSend` trait 放松 Send 约束；Schedule 默认切到 `SingleThreadedExecutor`，TaskPool API 保持不变，但底层执行退化为单线程后端。
 
 ## 23.6 Send/Sync 在 ECS 中的角色
 

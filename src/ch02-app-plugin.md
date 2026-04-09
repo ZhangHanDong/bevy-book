@@ -248,15 +248,16 @@ graph TD
     end
 
     subgraph Main["每帧循环 (Main)"]
-        M1["First<br/>推进 message 队列"]
-        M2["PreUpdate<br/>引擎内部更新(时间/输入)"]
-        M3["RunFixedMainLoop"]
-        M4["Update<br/>用户逻辑"]
-        M5["SpawnScene<br/>场景生成"]
-        M6["PostUpdate<br/>Transform 传播 / UI 布局 / 可见性计算"]
-        M7["Last<br/>帧结束"]
+        M1["First<br/>消息更新 / 时间更新"]
+        M2["PreUpdate<br/>输入/窗口准备"]
+        M3["StateTransition<br/>默认 feature 集启用"]
+        M4["RunFixedMainLoop"]
+        M5["Update<br/>用户逻辑"]
+        M6["SpawnScene<br/>场景生成"]
+        M7["PostUpdate<br/>Transform 传播 / UI 布局 / 可见性计算"]
+        M8["Last<br/>帧结束"]
 
-        M1 --> M2 --> M3 --> M4 --> M5 --> M6 --> M7
+        M1 --> M2 --> M3 --> M4 --> M5 --> M6 --> M7 --> M8
 
         subgraph Fixed["FixedMain (× N 次)"]
             F1["FixedFirst"]
@@ -277,17 +278,18 @@ graph TD
 
 | Schedule | 职责 | 谁在用 |
 |----------|------|--------|
-| **First** | 推进消息队列、清理过期消息 | 引擎内部 |
-| **PreUpdate** | 更新时间、刷新输入状态 | `TimePlugin`, `InputPlugin` |
+| **First** | 推进消息队列、更新时间 | 引擎内部, `TimePlugin` |
+| **PreUpdate** | 刷新输入状态、处理窗口等前置更新 | `InputPlugin` 等 |
+| **StateTransition** | 执行状态切换与 `OnEnter/OnExit` | `StatesPlugin` |
 | **RunFixedMainLoop** | 按固定步长执行 FixedUpdate | 物理、网络同步 |
 | **Update** | 用户游戏逻辑 | 用户 System |
 | **SpawnScene** | 生成场景实体 | `ScenePlugin` |
 | **PostUpdate** | Transform 传播、UI 布局、可见性 | `TransformPlugin`, `UiPlugin` |
 | **Last** | 帧结束清理 | 引擎内部 |
 
-用户的 System 通常注册到 `Update`（每帧逻辑）或 `FixedUpdate`（固定步长逻辑）。引擎内部的 System 分布在 `PreUpdate` 和 `PostUpdate` 中，对用户透明。
+在默认 feature 集中，`bevy_state` 会插入 `StateTransition`；如果显式裁掉该 feature，这个阶段就不存在。用户的 System 通常注册到 `Update`（每帧逻辑）或 `FixedUpdate`（固定步长逻辑）；引擎内部的 System 则分布在 `First`、`PreUpdate`、`PostUpdate` 等阶段。
 
-为什么每个 Schedule 存在于这个特定的位置？这个顺序不是随意的，而是由数据依赖关系严格决定的。First 必须在最前面，因为 `message_update_system` 需要先推进消息队列状态，让本轮系统看到当前应消费的数据，并清理已经过期的消息。PreUpdate 紧随其后，因为 Time 和 Input 的更新必须在用户逻辑之前完成——用户的 `Res<Time>` 和 `Res<ButtonInput>` 期望看到的是当前帧的值。FixedUpdate 被安排在 PreUpdate 之后、Update 之前，是因为物理模拟需要最新的时间信息但不应该依赖于用户逻辑的结果。PostUpdate 在 Update 之后，因为 Transform 传播和 UI 布局需要在用户修改了 Transform 或 UI 节点之后才能正确计算全局位置。如果 PostUpdate 在 Update 之前执行，用户在 Update 中修改的 Transform 要到下一轮传播时才会反映到全局结果上。Last 在最后面，为引擎提供一个帧结束的清理时机。这种分层设计也与第 9 章中讨论的 Schedule 调度器紧密相关——每个 Schedule 内部的 System 可以并行执行，但 Schedule 之间的顺序是严格串行的。
+为什么每个 Schedule 存在于这个特定的位置？这个顺序不是随意的，而是由数据依赖关系严格决定的。First 必须在最前面，因为 `message_update_system` 和 `time_system` 都在这里推进本轮消息与时间状态。PreUpdate 紧随其后，因为输入与窗口等前置更新必须先完成，用户的 `Res<ButtonInput>` 才能看到当前帧的值。在默认 feature 集中，StateTransition 被插在 PreUpdate 之后、RunFixedMainLoop 之前，这样状态切换既能消费刚更新好的输入/时间，又能在固定步和主逻辑运行前完成 `OnExit` / `OnEnter`。RunFixedMainLoop 随后执行，是因为物理模拟需要最新的时间信息但不应该依赖于本轮 Update 的结果。SpawnScene 位于 Update 之后，确保用户在 Update 中排队的场景生成会在 PostUpdate 的 Transform 传播和渲染提取之前落地。Last 在最后面，为引擎提供一个帧结束的清理时机。这种分层设计也与第 9 章中讨论的 Schedule 调度器紧密相关——每个 Schedule 内部的 System 可以并行执行，但 Schedule 之间的顺序是严格串行的。
 
 ### FixedUpdate 的追赶机制
 
@@ -298,7 +300,7 @@ graph TD
 
 这保证了物理模拟等系统的时间一致性，不受渲染帧率波动影响。
 
-**要点**：Main Schedule 由 7 个有序阶段组成，FixedUpdate 嵌套其中，用户逻辑在 Update 阶段执行。
+**要点**：默认 feature 集下，Main Schedule 每帧由 8 个有序阶段组成（包含 `StateTransition`），FixedUpdate 嵌套其中，用户逻辑在 Update 阶段执行。
 
 ## 2.6 Feature Flags：裁剪策略
 
@@ -356,7 +358,7 @@ bevy_ecs = "0.19"
 2. **Plugin** 是模块化的契约，实现广泛分布于 43 个 crate
 3. **PluginGroup** 将 Plugin 打包，支持按需定制
 4. **SubApp** 通过所有权隔离实现并行 World
-5. **Main Schedule** 由 7 个有序阶段 + 嵌套的 FixedUpdate 组成
+5. **Main Schedule** 在默认 feature 集下由 8 个有序阶段 + 嵌套的 FixedUpdate 组成
 6. **Feature Flags** 分三层，支持精确裁剪
 
 下一章，我们将进入 ECS 内核的第一站：`World`——一切数据的容器。

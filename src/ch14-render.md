@@ -1,7 +1,7 @@
 # 第 14 章：渲染架构 — 双 World 与 Extract 模式
 
 > **导读**：前面 13 章我们深入探索了 ECS 内核：World、Entity、Component、
-> Archetype、Query、System、Schedule、变更检测、Commands、Event/Observer、
+> Archetype、Query、System、Schedule、变更检测、Commands、Event、Message、Observer、
 > Relationship。从本章开始，我们将看到这些 ECS 机制如何渗透到 Bevy 引擎的
 > 各个子系统中。渲染架构是最能体现 Rust 所有权模型与 ECS 设计哲学融合的子系统。
 

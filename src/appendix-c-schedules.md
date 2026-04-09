@@ -4,7 +4,7 @@
 
 ## 主循环 Schedule
 
-主循环每帧按以下顺序执行 Schedule：
+主循环每帧按以下顺序执行 Schedule。默认 feature 集启用 `bevy_state` 时会包含 `StateTransition`；如果裁掉该 feature，这个阶段不存在。
 
 ```
   启动 (仅执行一次):
@@ -16,7 +16,7 @@
   每帧循环:
   ┌──────────────────────────────────────────────┐
   │  First                                       │
-  │  ├─ 时间更新、事件清理                         │
+  │  ├─ 消息更新、时间更新                         │
   │  PreUpdate                                   │
   │  ├─ 输入处理、窗口事件                         │
   │  StateTransition                             │
@@ -26,6 +26,8 @@
   │  │  → FixedPostUpdate → FixedLast            │
   │  Update                                      │
   │  ├─ 用户游戏逻辑 (主要写 System 的地方)        │
+  │  SpawnScene                                  │
+  │  ├─ 执行场景实例化                            │
   │  PostUpdate                                  │
   │  ├─ Transform 传播、渲染提取                   │
   │  Last                                        │
@@ -49,9 +51,12 @@
 
 | Schedule | 用途 | 典型内容 |
 |----------|------|---------|
-| `First` | 帧开头 | 时间更新、事件缓冲区轮转 |
+| `First` | 帧开头 | 消息更新、时间更新 |
 | `PreUpdate` | 更新前 | 输入事件处理、窗口事件 |
+| `StateTransition` | 状态切换 | 运行 OnExit/OnTransition/OnEnter |
+| `RunFixedMainLoop` | 固定步驱动 | 根据累计时间决定 FixedMain 执行次数 |
 | `Update` | 主更新 | **用户游戏逻辑** |
+| `SpawnScene` | 场景实例化 | 执行场景生成请求 |
 | `PostUpdate` | 更新后 | Transform 传播、可见性计算、渲染数据提取 |
 | `Last` | 帧末尾 | 清理、诊断收集 |
 
@@ -59,7 +64,6 @@
 
 | Schedule | 用途 | 说明 |
 |----------|------|------|
-| `RunFixedMainLoop` | 固定步驱动 | 根据累计时间决定 FixedMain 执行次数 |
 | `FixedFirst` | 固定步开头 | 固定步时间更新 |
 | `FixedPreUpdate` | 固定步前处理 | 物理引擎预处理 |
 | `FixedUpdate` | 固定步主循环 | **物理模拟、确定性逻辑** |

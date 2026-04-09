@@ -16,7 +16,7 @@
 - 2.2 Plugin trait：实现广泛分布于 43 个 crate
 - 2.3 PluginGroup 与 DefaultPlugins
 - 2.4 SubApp：渲染子应用与并行 World
-- 2.5 Main Schedule 全景：First → PreUpdate → Update → PostUpdate → Last
+- 2.5 Main Schedule 全景：First → PreUpdate → StateTransition → RunFixedMainLoop → Update → SpawnScene → PostUpdate → Last
 - 2.6 Feature Flags：140+ 开关的裁剪策略
 
 ---
@@ -194,7 +194,7 @@
 ### 第 18 章：State 系统
 - 18.1 States / SubStates / ComputedStates
 - 18.2 OnEnter / OnExit：独立 Schedule
-- 18.3 DespawnOnExit：Observer 监听状态变化
+- 18.3 DespawnOnExit：StateTransition 消息驱动清理
 - 18.4 run_if(in_state(...))
 
 ### 第 19 章：UI 系统

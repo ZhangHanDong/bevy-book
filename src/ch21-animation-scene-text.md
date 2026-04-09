@@ -301,15 +301,20 @@ pub struct FontAtlas {
 
 ```rust
 // 概念性展示
-// Text entity:
-//   - Text component (spans, content)
-//   - TextFont component (font, size, color)
+// Root text entity:
+//   - Text component (root content)
+//   - TextLayout component (justify, linebreak)
 //   - TextBounds component (max width/height)
-//   - ComputedTextBlock component (layout result)
+//   - ComputedTextBlock component (layout cache)
 //   - TextLayoutInfo component (glyph positions)
+//   - TextFont / TextColor components (root style)
+//
+// Child span entities (optional):
+//   - TextSpan component (appended content)
+//   - TextFont / TextColor components (per-span style)
 ```
 
-`ComputedTextBlock` 是 Parley 排版结果的缓存——只有当 Text 或 TextFont 变化时才重新排版。这又是 Changed 检测（第 10 章）在子系统中的应用。
+`ComputedTextBlock` 是 Parley 排版结果的缓存。根 `Text` / `Text2d` 的变化会触发重建，而 `TextFont`、`TextLayout`、`LineHeight`、`LetterSpacing`、`Children` 等变化也会把它标记为需要重新排版或重渲染。这又是 Changed 检测（第 10 章）在子系统中的应用。
 
 选择 Parley 而非自研排版引擎是一个重要的架构决策。文本排版是一个看似简单实则极其复杂的领域：Unicode 双向文本、复杂脚本的字形连接（如阿拉伯文）、行折断算法、字距调整。Parley 作为纯 Rust 实现的排版引擎，处理了这些复杂性，让 Bevy 可以专注于文本与 ECS 的集成而非排版算法本身。Font Atlas 的设计同样值得关注——它将字形缓存建模为 Asset（Handle&lt;Image&gt;），这意味着字形图集自动参与 Bevy 的 GPU 资源管理和热重载流程。当字体文件被修改时，Font Atlas 会被重建，所有引用该字体的文本实体自动更新显示。这种设计的代价是字形图集占用额外的 GPU 内存，但对于游戏中常见的有限字符集，图集大小通常在几 MB 以内。
 

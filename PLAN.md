@@ -1,6 +1,7 @@
 # 写作计划
 
 > 基于 `agent-spec graph` 生成的依赖关系，按关键路径组织为 8 个 Sprint。
+> 以下工期为历史写作估算；当前仓库状态已同步为全书完成。
 
 ## 依赖图
 
@@ -30,9 +31,9 @@ Ch01 → Ch02 → Ch03 → Ch04 → Ch05 → Ch06 → Ch07 → Ch08 → Ch09 →
 
 | 任务 | 工期 | Spec | 状态 |
 |------|------|------|------|
-| Ch01 Bevy 的设计哲学 | 0.5d | `ch01-design-philosophy.spec.md` | [ ] |
-| Ch02 App、Plugin 与主循环 | 1d | `ch02-app-plugin.spec.md` | [ ] |
-| 前言 (preface.md) 润色 | 0.5d | — | [ ] |
+| Ch01 Bevy 的设计哲学 | 0.5d | `ch01-design-philosophy.spec.md` | [x] |
+| Ch02 App、Plugin 与主循环 | 1d | `ch02-app-plugin.spec.md` | [x] |
+| 前言 (preface.md) 润色 | 0.5d | — | [x] |
 
 **产出**: 读者能理解 Bevy 的设计理念和整体架构。
 
@@ -42,9 +43,9 @@ Ch01 → Ch02 → Ch03 → Ch04 → Ch05 → Ch06 → Ch07 → Ch08 → Ch09 →
 
 | 任务 | 工期 | Spec | 状态 |
 |------|------|------|------|
-| Ch03 World | 1d | `ch03-world.spec.md` | [ ] |
-| Ch04 Entity | 0.5d | `ch04-entity.spec.md` | [ ] |
-| Ch05 Component 与 Storage | 1.5d | `ch05-component-storage.spec.md` | [ ] |
+| Ch03 World | 1d | `ch03-world.spec.md` | [x] |
+| Ch04 Entity | 0.5d | `ch04-entity.spec.md` | [x] |
+| Ch05 Component 与 Storage | 1.5d | `ch05-component-storage.spec.md` | [x] |
 
 **产出**: 读者理解 ECS 的数据基础——World、Entity、Component 和内存布局。
 
@@ -54,9 +55,9 @@ Ch01 → Ch02 → Ch03 → Ch04 → Ch05 → Ch06 → Ch07 → Ch08 → Ch09 →
 
 | 任务 | 工期 | Spec | 状态 |
 |------|------|------|------|
-| Ch06 Archetype | 1d | `ch06-archetype.spec.md` | [ ] |
-| Ch07 Query | 1d | `ch07-query.spec.md` | [ ] |
-| Ch08 System | 1.5d | `ch08-system.spec.md` | [ ] |
+| Ch06 Archetype | 1d | `ch06-archetype.spec.md` | [x] |
+| Ch07 Query | 1d | `ch07-query.spec.md` | [x] |
+| Ch08 System | 1.5d | `ch08-system.spec.md` | [x] |
 
 **产出**: 读者理解数据如何被查询和操作——Archetype 索引、Query 引擎、函数即系统。
 
@@ -66,8 +67,8 @@ Ch01 → Ch02 → Ch03 → Ch04 → Ch05 → Ch06 → Ch07 → Ch08 → Ch09 →
 
 | 任务 | 工期 | Spec | 状态 |
 |------|------|------|------|
-| Ch09 Schedule | 1d | `ch09-schedule.spec.md` | [ ] |
-| Ch10 变更检测 | 0.5d | `ch10-change-detection.spec.md` | [ ] |
+| Ch09 Schedule | 1d | `ch09-schedule.spec.md` | [x] |
+| Ch10 变更检测 | 0.5d | `ch10-change-detection.spec.md` | [x] |
 
 **产出**: ECS 内核篇完结。读者完整理解 Bevy ECS 从存储到调度的全链路。
 
@@ -77,9 +78,9 @@ Ch01 → Ch02 → Ch03 → Ch04 → Ch05 → Ch06 → Ch07 → Ch08 → Ch09 →
 
 | 任务 | 工期 | Spec | 状态 |
 |------|------|------|------|
-| Ch11 Commands | 0.5d | `ch11-commands.spec.md` | [ ] |
-| Ch12 Event/Message/Observer | 1d | `ch12-event-observer.spec.md` | [ ] |
-| Ch13 Relationship/Hierarchy | 0.5d | `ch13-relationship.spec.md` | [ ] |
+| Ch11 Commands | 0.5d | `ch11-commands.spec.md` | [x] |
+| Ch12 Event/Message/Observer | 1d | `ch12-event-observer.spec.md` | [x] |
+| Ch13 Relationship/Hierarchy | 0.5d | `ch13-relationship.spec.md` | [x] |
 
 **产出**: 读者理解 ECS 中实体间如何通信和建立关系。
 
@@ -89,13 +90,13 @@ Ch01 → Ch02 → Ch03 → Ch04 → Ch05 → Ch06 → Ch07 → Ch08 → Ch09 →
 
 | 任务 | 工期 | Spec | 状态 |
 |------|------|------|------|
-| Ch14 渲染架构 | 1d | `ch14-render.spec.md` | [ ] |
-| Ch15 Transform | 0.5d | `ch15-transform.spec.md` | [ ] |
-| Ch16 Asset | 0.5d | `ch16-asset.spec.md` | [ ] |
-| Ch17 Input | 0.5d | `ch17-input.spec.md` | [ ] |
-| Ch18 State | 0.5d | `ch18-state.spec.md` | [ ] |
-| Ch19 UI | 0.5d | `ch19-ui.spec.md` | [ ] |
-| Ch20 PBR | 0.5d | `ch20-pbr.spec.md` | [ ] |
+| Ch14 渲染架构 | 1d | `ch14-render.spec.md` | [x] |
+| Ch15 Transform | 0.5d | `ch15-transform.spec.md` | [x] |
+| Ch16 Asset | 0.5d | `ch16-asset.spec.md` | [x] |
+| Ch17 Input | 0.5d | `ch17-input.spec.md` | [x] |
+| Ch18 State | 0.5d | `ch18-state.spec.md` | [x] |
+| Ch19 UI | 0.5d | `ch19-ui.spec.md` | [x] |
+| Ch20 PBR | 0.5d | `ch20-pbr.spec.md` | [x] |
 
 **产出**: 读者理解 ECS 如何驱动引擎七大子系统。
 
@@ -105,11 +106,11 @@ Ch01 → Ch02 → Ch03 → Ch04 → Ch05 → Ch06 → Ch07 → Ch08 → Ch09 →
 
 | 任务 | 工期 | Spec | 状态 |
 |------|------|------|------|
-| Ch21 动画/场景/文本 | 0.5d | `ch21-animation-scene-text.spec.md` | [ ] |
-| Ch22 Reflect | 1d | `ch22-reflect.spec.md` | [ ] |
-| Ch23 并发模型 | 1d | `ch23-concurrency.spec.md` | [ ] |
-| Ch24 诊断与调试 | 0.5d | `ch24-diagnostics.spec.md` | [ ] |
-| Ch25 跨平台 | 0.5d | `ch25-cross-platform.spec.md` | [ ] |
+| Ch21 动画/场景/文本 | 0.5d | `ch21-animation-scene-text.spec.md` | [x] |
+| Ch22 Reflect | 1d | `ch22-reflect.spec.md` | [x] |
+| Ch23 并发模型 | 1d | `ch23-concurrency.spec.md` | [x] |
+| Ch24 诊断与调试 | 0.5d | `ch24-diagnostics.spec.md` | [x] |
+| Ch25 跨平台 | 0.5d | `ch25-cross-platform.spec.md` | [x] |
 
 **产出**: 高级主题全部覆盖。
 
@@ -119,9 +120,9 @@ Ch01 → Ch02 → Ch03 → Ch04 → Ch05 → Ch06 → Ch07 → Ch08 → Ch09 →
 
 | 任务 | 工期 | Spec | 状态 |
 |------|------|------|------|
-| Ch26 Rust 设计模式总结 | 1d | `ch26-rust-patterns.spec.md` | [ ] |
-| 附录 A-F | 0.5d | — | [ ] |
-| 全书校对与 mdbook 构建 | 0.5d | — | [ ] |
+| Ch26 Rust 设计模式总结 | 1d | `ch26-rust-patterns.spec.md` | [x] |
+| 附录 A-F | 0.5d | — | [x] |
+| 全书校对与 mdbook 构建 | 0.5d | — | [x] |
 
 **产出**: 全书完成，可发布。
 

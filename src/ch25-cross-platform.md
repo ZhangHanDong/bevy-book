@@ -160,11 +160,12 @@ cfg::conditional_send! {
 }
 ```
 
-### SingleThreadedTaskPool
+### 单线程 TaskPool 后端
 
 ```rust
 // 源码: crates/bevy_tasks/src/single_threaded_task_pool.rs (概念)
-// WASM 使用单线程 TaskPool，所有任务顺序执行
+// WASM / 非 multi_threaded 配置下，公开类型仍然是 TaskPool，
+// 只是内部后端不再创建真实工作线程
 pub struct TaskPool {}
 
 impl TaskPool {
@@ -180,14 +181,14 @@ impl TaskPool {
 ```
   原生平台                          Web 平台 (WASM)
   ┌──────────────────────┐         ┌──────────────────────┐
-  │ MultiThreadedExecutor│         │ SimpleExecutor       │
+  │ MultiThreadedExecutor│         │ SingleThreadedExecutor│
   │   ├─ Thread 1        │         │   └─ 主线程顺序执行   │
   │   ├─ Thread 2        │         │                      │
-  │   └─ Thread N        │         │ SingleThreadedTaskPool│
+  │   └─ Thread N        │         │ TaskPool             │
   │                      │         │   └─ 同步执行         │
   │ T: Send + Sync 必须  │         │                      │
   │ NonSend = 主线程限制  │         │ T: 无 Send 要求      │
-  │                      │         │ NonSend = 无意义      │
+  │                      │         │ NonSend = API 保留     │
   │ Instant = std::time  │         │ Instant = web_time   │
   └──────────────────────┘         └──────────────────────┘
 ```
@@ -202,7 +203,7 @@ Web 环境使用 WebGPU 或 WebGL2 作为渲染后端。`bevy_render` 通过 `wg
 
 ConditionalSend 的设计是 Bevy 跨平台架构中最精妙的 trait 技巧之一。问题的根源在于：Bevy 的系统函数和异步任务在原生平台上需要满足 `Send` 约束（因为它们会被发送到其他线程执行），但在 WASM 上 `Send` 约束毫无意义（只有一个线程）。如果 API 统一要求 `Send`，WASM 用户就无法使用 `!Send` 的浏览器 API（如 DOM 操作）。如果 API 不要求 `Send`，原生平台的类型安全就被削弱。ConditionalSend 通过条件编译在两个平台上切换定义：原生平台上它等价于 `Send`，WASM 上它是一个对所有类型自动实现的空 trait。上层代码只需要约束 `T: ConditionalSend` 而非 `T: Send`，就能在两个平台上都正确工作。这种设计的代价是引入了一个额外的 trait，增加了概念复杂度；但它优雅地解决了"一套 API 同时服务多线程和单线程环境"这个本质难题。
 
-**要点**：Web 平台通过 ConditionalSend 移除 Send 约束、SingleThreadedTaskPool 替代多线程池、SimpleExecutor 替代并行调度器，实现完整的单线程 ECS。
+**要点**：Web 平台通过 ConditionalSend 移除 Send 约束；Schedule 默认切到 `SingleThreadedExecutor`，TaskPool API 保持一致但底层退化为单线程执行，并通过主线程 tick 推进本地 executor。
 
 ## 25.4 NonSend：平台差异的统一处理
 
@@ -210,26 +211,23 @@ ConditionalSend 的设计是 Bevy 跨平台架构中最精妙的 trait 技巧之
 
 | 平台 | 常见 NonSend 类型 | 原因 |
 |------|-------------------|------|
-| Windows | 窗口句柄 (HWND) | COM 线程亲和性 |
-| macOS | NSWindow | 必须主线程操作 UI |
-| Linux | X11 Display | 部分 X11 API 非线程安全 |
-| iOS | UIWindow | UIKit 主线程限制 |
-| Android | NativeActivity | JNI 线程限制 |
-| Web | 全部 | 单线程环境 |
+| Windows/macOS/Linux | 平台窗口/显示后端对象 | 宿主窗口系统具有线程上下文约束 |
+| iOS | UIKit 宿主对象 | 主线程 UI 限制 |
+| Android | GameActivity / NativeActivity 宿主 | JNI 与宿主线程限制 |
+| Web | 浏览器宿主对象 | 单线程环境 |
 
 Bevy 通过 `NonSend<T>` 和 `NonSendMut<T>` 提供统一的 API。调度器自动处理线程约束——NonSend 系统被标记为 `is_send = false`，只会被调度到主线程执行器。
 
 ```rust
-// 跨平台的 NonSend 使用（各平台代码一致）
-fn window_system(window: NonSend<RawWindowHandle>) {
-    // 编译器保证 RawWindowHandle: !Send
-    // 调度器保证此系统在主线程运行
+// 跨平台的主线程约束（各平台代码一致）
+fn main_thread_only_system(_main_thread: NonSendMarker) {
+    // 调度器保证此系统只能在主线程运行
 }
 ```
 
 在单线程模式下（如 WASM），NonSend 约束变得无意义——所有代码都在主线程。但 API 保持一致，使得同一份代码可以在多线程和单线程环境下编译和运行。
 
-NonSend 的跨平台统一性体现了 Bevy 的一个重要设计原则：平台差异应该在引擎层面被吸收，而非泄漏到用户代码中。用户写的 `NonSend<RawWindowHandle>` 系统在所有平台上都是合法的——在多线程平台上，调度器保证它在主线程运行；在单线程平台上，它本来就在主线程运行。用户不需要为不同平台编写不同的系统代码。这与第 23 章讨论的并发模型紧密相关：Send/Sync 约束和 NonSend 系统参数共同构成了一个类型安全的并发框架，调度器在运行时将类型约束转化为线程调度决策。这种"类型约束驱动调度"的模式是 Rust 类型系统在系统编程中的典型应用。
+NonSend 的跨平台统一性体现了 Bevy 的一个重要设计原则：平台差异应该在引擎层面被吸收，而非泄漏到用户代码中。用户写的 `NonSend<T>` / `NonSendMut<T>` 或 `NonSendMarker` 系统在所有平台上都使用同一套 API：在多线程平台上，调度器据此把系统固定到主线程；在单线程平台上，这个约束通常只是显式表达“此系统依赖主线程上下文”。窗口底层句柄在引擎内部更常以 `RawHandleWrapper` 之类的封装组件存在，而不是直接作为 `NonSend<RawWindowHandle>` 暴露给普通系统。
 
 **要点**：NonSend 是跨平台 `!Send` 资源的统一 API。不同平台的线程约束通过调度器自动适配。
 
@@ -239,21 +237,19 @@ NonSend 的跨平台统一性体现了 Bevy 的一个重要设计原则：平台
 
 ### Android
 
-Android 应用通过 `NativeActivity` 与系统交互。Bevy 的 Android 支持需要：
+Android 平台的关键点是：Bevy 当前默认面向 `GameActivity`，`NativeActivity` 仍可选但已是 legacy 路径。除此之外，Android 还需要：
 
-- 使用 `android_logger` 替代标准日志
 - 通过 `winit` 的 Android 后端管理窗口和事件循环
 - 资产 (Asset) 通过 Android 的 `AssetManager` 加载，而非文件系统
-- 应用暂停/恢复需要处理 EGL 上下文重建
+- 宿主生命周期与窗口/渲染后端协同工作
 
 ### iOS
 
-iOS 应用通过 `UIApplicationDelegate` 管理生命周期。关键差异：
+iOS 侧同样存在宿主生命周期、图形后端和资产 I/O 的平台约束。对 Bevy 用户最重要的事实不是这些细节本身，而是：
 
-- Metal 是唯一的渲染后端（不支持 Vulkan）
-- 触摸事件格式与桌面平台不同
-- 资产通过 Bundle 路径加载
-- 应用进入后台时需要正确释放 GPU 资源
+- Plugin API 不因平台而变化
+- 窗口、输入、渲染和资产后端差异由底层平台集成吸收
+- 用户层仍通过同一套 `DefaultPlugins` / `Plugin` 入口组织应用
 
 ### 统一的 Plugin 接口
 
@@ -270,7 +266,7 @@ impl Plugin for MyGamePlugin {
 
 平台差异被封装在 `DefaultPlugins` 内部——不同平台的 `WindowPlugin`、`RenderPlugin` 实现不同，但对用户透明。
 
-**要点**：Android/iOS 的差异主要在应用生命周期、渲染后端和资产加载，通过 DefaultPlugins 封装，保持 Plugin API 统一。
+**要点**：Android/iOS 的差异主要落在宿主生命周期、窗口后端和资产 I/O；对用户暴露的 Plugin API 保持统一，平台分歧主要由 `DefaultPlugins` 和底层平台集成吸收。
 
 ## 本章小结
 
@@ -278,7 +274,7 @@ impl Plugin for MyGamePlugin {
 
 1. **bevy_platform**：`no_std` 平台抽象层，通过 cfg 宏统一条件编译
 2. **ECS no_std**：核心数据结构基于 `core + alloc`，可在嵌入式/裸机环境使用
-3. **Web 单线程**：通过 ConditionalSend + SimpleExecutor + SingleThreadedTaskPool 适配 WASM
+3. **Web 单线程**：通过 ConditionalSend + `SingleThreadedExecutor` + 单线程后端的 `TaskPool` 适配 WASM
 4. **NonSend**：跨平台 `!Send` 资源的统一 API，调度器自动处理线程约束
 5. **移动平台**：Android/iOS 差异封装在 DefaultPlugins 中，Plugin API 保持统一
 

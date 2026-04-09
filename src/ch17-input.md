@@ -73,19 +73,19 @@ graph TD
 // - Name component: "Xbox Controller"
 // - GamepadSettings component: deadzone, threshold
 // - ButtonInput<GamepadButton> component (per-gamepad)
-// - Axis<GamepadAxis> component (per-gamepad)
+// - Axis<GamepadInput> component (per-gamepad)
 ```
 
 ```
   Gamepad 的 Entity + Component 建模
 
-  Entity A (Gamepad 1):          Entity B (Gamepad 2):
-  ┌──────────────────────┐      ┌──────────────────────┐
-  │ Name("Player 1 Pad") │      │ Name("Player 2 Pad") │
-  │ GamepadSettings      │      │ GamepadSettings      │
-  │ ButtonInput<Button>  │      │ ButtonInput<Button>  │
-  │ Axis<GamepadAxis>    │      │ Axis<GamepadAxis>    │
-  └──────────────────────┘      └──────────────────────┘
+  Entity A (Gamepad 1):              Entity B (Gamepad 2):
+  ┌────────────────────────────┐    ┌────────────────────────────┐
+  │ Name("Player 1 Pad")       │    │ Name("Player 2 Pad")       │
+  │ GamepadSettings            │    │ GamepadSettings            │
+  │ ButtonInput<GamepadButton> │    │ ButtonInput<GamepadButton> │
+  │ Axis<GamepadInput>         │    │ Axis<GamepadInput>         │
+  └────────────────────────────┘    └────────────────────────────┘
 
   每个手柄是独立 Entity，拥有自己的输入状态
 ```

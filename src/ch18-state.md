@@ -18,7 +18,7 @@ pub trait States: 'static + Send + Sync + Clone + PartialEq + Eq + Hash + Debug 
 
 约束很简洁：`Clone + PartialEq + Eq + Hash + Debug + Send + Sync + 'static`——本质上就是 "可以比较、可以哈希、可以跨线程、可以持久存储" 的值类型。
 
-为什么 Bevy 选择将状态建模为 Schedule 驱动的系统，而非简单的布尔标志或枚举检查？在 Unity 中，状态管理通常依赖于 `MonoBehaviour` 中的 `if (state == X)` 条件判断，这导致状态逻辑分散在无数个组件中，难以追踪状态转换的完整链路。Godot 的状态机虽然更结构化，但仍然是面向对象的——状态节点持有自身的进入/退出回调，与场景树紧密耦合。Bevy 的设计哲学截然不同：状态值只是一个 Resource，状态转换触发独立的 Schedule 执行。这意味着状态系统完全复用 ECS 已有的原语（Resource、Schedule、Observer、run_if），而非引入新的运行时机制。这种设计的代价是概念密度较高——初学者需要理解 Schedule 才能理解 State——但收益是状态系统与 ECS 的其他部分完全正交，不存在任何特殊路径。
+为什么 Bevy 选择将状态建模为 Schedule 驱动的系统，而非简单的布尔标志或枚举检查？在 Unity 中，状态管理通常依赖于 `MonoBehaviour` 中的 `if (state == X)` 条件判断，这导致状态逻辑分散在无数个组件中，难以追踪状态转换的完整链路。Godot 的状态机虽然更结构化，但仍然是面向对象的——状态节点持有自身的进入/退出回调，与场景树紧密耦合。Bevy 的设计哲学截然不同：状态值只是一个 Resource，状态转换触发独立的 Schedule 执行。这意味着状态系统完全复用 ECS 已有的原语（Resource、Schedule、Message、run_if），而非引入新的运行时机制。这种设计的代价是概念密度较高——初学者需要理解 Schedule 才能理解 State——但收益是状态系统与 ECS 的其他部分完全正交，不存在任何特殊路径。
 
 使用 derive 宏定义状态：
 
@@ -61,7 +61,7 @@ graph TD
 
 *图 18-1: 状态转换流程*
 
-这种双 Resource 设计（State + NextState）暗含了一个重要的时序保证：在同一帧中，多个 System 可以各自调用 `next_state.set()`，但只有最后一次写入生效，且状态转换推迟到 StateTransition Schedule 统一执行。这避免了帧中间状态不一致的问题——如果状态转换是即时的，一个 System 刚切换状态，后续 System 可能还在读取旧状态的数据，导致逻辑错误。延迟执行还意味着 OnEnter/OnExit 中 spawn 的实体不会在同一帧被其他 Update 系统意外访问到，消除了一类难以调试的时序 bug。
+这种双 Resource 设计（State + NextState）暗含了一个重要的时序保证：在同一帧中，多个 System 可以各自调用 `next_state.set()`，但只有最后一次写入生效，且状态转换推迟到 StateTransition Schedule 统一执行。这避免了帧中间状态不一致的问题——如果状态转换是即时的，一个 System 刚切换状态，后续 System 可能还在读取旧状态的数据，导致逻辑错误。在默认主循环顺序下，StateTransition 位于 `PreUpdate` 之后、`Update` 之前，因此 OnEnter/OnExit 中通过 Commands 生成的实体通常会在同一帧后续的 `Update` / `PostUpdate` 中可见；真正被避免的是“在更早阶段读到半完成的状态切换结果”这类时序问题。
 
 **要点**：States trait 约束简洁明确。状态值存储在 State<S> 和 NextState<S> 两个 Resource 中。转换由 StateTransition Schedule 驱动。
 

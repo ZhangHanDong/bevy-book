@@ -376,14 +376,14 @@ schedule.set_build_settings(ScheduleBuildSettings {
 
 ```mermaid
 graph LR
-    F["First"] --> PU["PreUpdate"] --> RFML["RunFixedMainLoop"]
+    F["First"] --> PU["PreUpdate"] --> ST["StateTransition<br/>(默认 feature 集启用)"] --> RFML["RunFixedMainLoop"]
 
     subgraph Fixed["× N 次 (追赶)"]
         FPU["FixedPreUpdate"] --> FU["FixedUpdate"] --> FPOST["FixedPostUpdate"]
     end
 
     RFML --> FPU
-    RFML --> U["Update"] --> POST["PostUpdate"] --> L["Last"]
+    RFML --> U["Update"] --> SS["SpawnScene"] --> POST["PostUpdate"] --> L["Last"]
 ```
 
 N = floor(accumulated_time / fixed_timestep)

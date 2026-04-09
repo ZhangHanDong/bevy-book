@@ -295,15 +295,15 @@ app.add_plugins(FpsOverlayPlugin {
 
 ## 24.6 Subsecond 热补丁：ECS 与代码替换的天然契合
 
-前面几节讨论的都是"观测"工具。本节讨论一个更激进的开发体验优化：**在不重启进程的前提下替换 System 函数体**。Bevy 0.17+ 通过可选的 `hotpatching` feature 集成了 Dioxus Labs 开发的 [Subsecond](https://crates.io/crates/subsecond) 热补丁系统。
+前面几节讨论的都是"观测"工具。本节讨论一个更激进的开发体验优化：**在不重启进程的前提下替换 System 函数体**。Bevy 0.17+ 提供可选的 `hotpatching` feature，把 Dioxus Labs 开发的 [Subsecond](https://crates.io/crates/subsecond) 接进 App 运行时：底层热函数支持位于 `bevy_ecs`，而与 Dioxus CLI 的连接和补丁通知桥接由 `bevy_app::hotpatch::HotPatchPlugin` 完成。
 
 ### 核心机制
 
-Subsecond 的思路是：用户代码在调用点包裹 `subsecond::call(|| { ... })`，运行时查询一张全局跳转表（`HashMap<u64, u64>`，键为旧函数地址、值为新地址）决定跳转到哪个版本。外部工具编译变化的代码生成单元后通过消息通道发送新跳转表，运行时原子替换——**不修改进程内存**。Release 模式下 `subsecond::call` 会早退为 `return f()`，跳转表完全不存在于生产构建中。
+Subsecond 的核心 API 是 `subsecond::call(|| { ... })`。在 debug 构建里，它把闭包装成 `HotFn`，通过全局 JumpTable 查询当前函数指针，并在需要时通过 unwind/retry 重新进入最新版本；在非 debug 构建里则直接 `return f()`，也就是**不会走跳转表调用路径**（源码: `packages/subsecond/subsecond/src/lib.rs:250`）。JumpTable 本身保存补丁动态库路径、old->new 的 AddressMap（底层是 `HashMap<u64, u64>`）以及 ASLR 锚点（源码: `packages/subsecond/subsecond-types/src/lib.rs:9`；`packages/subsecond/subsecond/src/lib.rs:273`）。外部工具编译变化的代码生成单元后发送新 JumpTable，运行时只替换表项，不直接改写进程代码页。
 
 ### Bevy 的集成：把热补丁信号变成变更检测
 
-Bevy 通过 `bevy_ecs` 的 `hotpatching` feature 启用 Subsecond。集成引入了两个最小对象：
+Bevy 的类型层支持位于 `bevy_ecs`，但真正把热补丁接进调度循环的是 `bevy_app::hotpatch::HotPatchPlugin`：它先连接 Dioxus CLI，再用 `subsecond::register_handler` 把补丁到达转换为 channel 信号；`Last` 阶段的系统读到信号后写入 `HotPatched`，并对 `HotPatchChanges` 调用 `set_changed()`（源码: `crates/bevy_app/src/hotpatch.rs:24`）。集成中最核心的两个 ECS 对象仍然是：
 
 ```rust
 // 源码: crates/bevy_ecs/src/lib.rs:143
@@ -317,7 +317,7 @@ pub struct HotPatched;
 pub struct HotPatchChanges;
 ```
 
-`HotPatched` 是热补丁发生时推送的 Message。`HotPatchChanges` 是一个**零字段 Resource**——它不存储任何数据，存在的唯一目的是**借用第 10 章的 Tick 机制充当"热补丁时钟"**。每次收到补丁通知时 Bevy mutate 它以推进 change tick，Executor 派发 System 时比对 tick 决定是否刷新函数指针：
+`HotPatched` 是开发者可订阅的补丁 Message。`HotPatchChanges` 是一个**零字段 Resource**，存在的唯一目的是**借用第 10 章的 Tick 机制充当"热补丁时钟"**。Bevy 不会在补丁到达的瞬间直接改写所有 System；而是先在 `Last` 标记它已变化，随后 Executor 在后续调度点读取 `last_changed()`，只在 `hotpatch_tick` 晚于 `system.last_run` 时调用 `refresh_hotpatch()` 刷新缓存函数指针：
 
 ```rust
 // 源码: crates/bevy_ecs/src/schedule/executor/multi_threaded.rs:480
@@ -330,40 +330,41 @@ if hotpatch_tick.is_newer_than(
 }
 ```
 
-信号传播完全复用既有机制——无需回调、全局锁或状态机。
+信号传播完全复用既有机制——外部通知先转成 Resource 的 change tick，再由调度器按需刷新函数指针；不需要额外的全局状态机。
 
 ```mermaid
 flowchart TD
     A["外部工具<br/>发送新跳转表"] --> B["Subsecond 运行时<br/>原子替换 AddressMap"]
-    B --> C["Bevy 集成层<br/>mutate HotPatchChanges"]
-    C --> D["Executor 派发下一个 System"]
-    D --> E{"hotpatch_tick<br/>newer than<br/>system.last_run?"}
-    E -- "Yes" --> F["system.refresh_hotpatch()"]
-    E -- "No" --> G["复用缓存指针"]
-    F --> H["运行新版函数体"]
-    G --> H
+    B --> C["HotPatchPlugin handler<br/>发送 channel 信号"]
+    C --> D["Last 阶段系统<br/>write HotPatched<br/>set_changed(HotPatchChanges)"]
+    D --> E["后续调度点<br/>Executor 读取 hotpatch_tick"]
+    E --> F{"hotpatch_tick<br/>newer than<br/>system.last_run?"}
+    F -- "Yes" --> G["system.refresh_hotpatch()"]
+    F -- "No" --> H["复用缓存指针"]
+    G --> I["运行新版函数体"]
+    H --> I
 ```
 
 *图 24-5: Subsecond 热补丁在 Bevy Executor 中的触发流程*
 
 ### 为什么 ECS 的架构优势在这里显现
 
-Unreal 的 Live Coding 和 Unity 的 Assembly Reload 早已证明 OOP 引擎可以热重载——ECS 的优势不是"让热补丁成为可能"，而是让它**几乎不需要额外设计**。三个特征共同作用：System 的数据依赖通过 SystemParam 在函数签名中显式声明（第 8 章），持久状态绝大多数放在 Component/Resource 中而非闭包字段（`Local<T>` 是例外，但它由 `FunctionSystem` 包装器持有、不随补丁变化）；数据与行为彻底分离（第 1 章）让补丁只需替换函数指针，World 中的实体数据无需迁移；Executor 派发 System 之间的天然同步点（第 9 章）让函数指针替换无竞态，无需 stop-the-world。
+Unreal 的 Live Coding 和 Unity 的 Assembly Reload 早已证明 OOP 引擎可以热重载。ECS 的优势不是"让热补丁成为可能"，而是让它**几乎不需要额外设计**。三个特征共同作用：System 的数据依赖通过 SystemParam 在函数签名中显式声明（第 8 章），持久状态绝大多数放在 Component/Resource 中而非闭包字段（`Local<T>` 是例外，但它由 `FunctionSystem` 包装器持有、不随补丁变化）；数据与行为彻底分离（第 1 章）让补丁只需替换函数指针，World 中的实体数据无需迁移；调度器在 System/Observer 派发前提供天然同步点，让函数指针刷新发生在既有执行边界上，无需 stop-the-world。
 
-> **Rust 设计亮点**：Bevy 的 Subsecond 集成总共只引入一个 Message、一个空 Resource、一个 trait 方法。`HotPatchChanges` 本身不存数据，只借用 Tick 机制充当热补丁时钟——这是"正交机制复用"的典范。
+> **Rust 设计亮点**：在 `bevy_ecs` 层，Bevy 的 Subsecond 支持只新增一个 Message、一个空 Resource、一个 trait 方法；运行时桥接则由 `bevy_app::hotpatch::HotPatchPlugin` 负责把外部补丁信号转成 ECS 世界里的 change tick。`HotPatchChanges` 本身不存数据，只复用既有变更检测机制充当热补丁时钟。
 
 ### 启动方式与已知陷阱
 
-启用步骤：打开 `bevy_ecs` 的 `hotpatching` feature，然后用 Dioxus CLI 的 `dx serve --hotpatch` 运行应用（CLI 负责编译 CGU 并推送跳转表）。几个**必须提前知道的陷阱**：
+启用步骤：打开 Bevy 的 `hotpatching` feature，然后用 Dioxus CLI 的 `dx serve --hot-patch` 运行应用（`--hotpatch` 只是别名；源码: `packages/cli/src/cli/serve.rs:57`）。几个**必须提前知道的陷阱**：
 
 1. **仅补丁 tip crate**（`main.rs` 所在 crate）。跨 crate 修改不支持——rustc 构建图非确定性，且修改转发泛型的函数会引发级联 codegen 变更。
 2. **System 签名与数据结构布局不能变**。修改 `Query` 过滤器、参数类型、`Component`/`Resource` 字段布局都需要完整重启。
 3. **Tip crate 的 thread-local 每次补丁后重置**，Subsecond 官方警告"复杂场景可能 crash 或 segfault"。
-4. **Release 模式绝不启用**：`HotPatchChanges` 读取路径包含 `unsafe`，官方注释明确要求此 feature 不应在 release 开启。
+4. **开发模式专用**：Subsecond 的 `call()` 在非 debug 构建里会直接执行原闭包，但 Bevy 的 hotpatching 路径包含 `unsafe`，Executor 注释也明确要求此 feature 不应在 release 开启。
 
 实际使用中最频繁的改动（System 函数体内的数值调整、分支逻辑、bug 修复）恰好是 Subsecond 完美支持的场景。
 
-**要点**：Subsecond 通过跳转表实现代码热补丁，Bevy 用 `HotPatchChanges` 的变更检测 tick 把刷新信号传播到每个 System。
+**要点**：Subsecond 通过 JumpTable 实现代码热补丁；Bevy 则先在 `bevy_app` 层把外部补丁通知桥接进 ECS 世界，再用 `HotPatchChanges` 的变更检测 tick 把刷新信号传播到后续调度点。
 
 ## 本章小结
 

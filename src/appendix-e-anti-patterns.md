@@ -83,12 +83,12 @@ fn damage_system(
     mut health: Query<&mut Health>,
     mut messages: MessageWriter<HealthChanged>,
 ) {
-    // 修改 health 时明确发送事件
+    // 修改 health 时明确发送消息
     messages.write(HealthChanged { entity, old, new });
 }
 ```
 
-**为什么**：`Changed<T>` 的语义是"本 Tick 内 `DerefMut` 被调用过"——它不区分值是否真的变了，也可能因为系统执行顺序而遗漏。对于重要的业务逻辑，明确的 Message 或 Observer Event 更可靠。
+**为什么**：`Changed<T>` 的语义是"本 Tick 内 `DerefMut` 被调用过"——它不区分值是否真的变了，也可能因为系统执行顺序而遗漏。对于重要的业务逻辑，明确的 Message 或显式触发的 Event/Observer 更可靠。
 
 ---
 
@@ -225,8 +225,8 @@ fn system_a(mut score: ResMut<GameScore>) {
 |---|--------|---------|---------|
 | 1 | 上帝 System | 拆分为小系统 | 更好的并行和可维护性 |
 | 2 | Component 存引用 | 使用 Relationship | 自动生命周期管理 |
-| 3 | 过度用 Changed | Event 明确通知 | Changed 语义可能遗漏 |
+| 3 | 过度用 Changed | Message / 显式 Event/Observer 通知 | Changed 语义可能遗漏 |
 | 4 | spawn 后立即查询 | chain + apply_deferred | Commands 是延迟的 |
 | 5 | Resource 代替 Component | 数据挂载到 Entity | 支持多实体 |
 | 6 | 忽略 StorageType | 频繁增删用 SparseSet | 避免 Archetype 迁移 |
-| 7 | 共享可变状态 | Resource / Event | 保持调度器可见性 |
+| 7 | 共享可变状态 | Resource / Message | 保持调度器可见性 |

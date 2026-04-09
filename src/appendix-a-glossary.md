@@ -18,7 +18,8 @@
 | Schedule | 调度 | 系统的编排和执行计划，自动处理依赖和并行 | 第 9 章 |
 | SystemSet | 系统集 | 一组 System 的逻辑分组，用于配置顺序约束 | 第 9 章 |
 | Commands | 命令 | 延迟执行的 World 操作队列（spawn、insert、despawn 等） | 第 11 章 |
-| Event | 事件 | 帧内的广播消息，双缓冲队列 | 第 12 章 |
+| Event | 事件 | 通过 `trigger` 立即分发给 Observer 的触发对象 | 第 12 章 |
+| Message | 消息 | 双缓冲消息队列，通过 `MessageWriter` / `MessageReader` 批量传递 | 第 12 章 |
 | Observer | 观察者 | 响应特定触发的回调系统 | 第 12 章 |
 | Relationship | 关系 | Entity 间的类型化关联（如 ChildOf） | 第 13 章 |
 | Plugin | 插件 | 模块化的功能包，向 App 注册 System、Resource 等 | 第 2 章 |

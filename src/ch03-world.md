@@ -59,7 +59,7 @@ pub struct World {
 │                                                      │
 │  ┌─ 事件与变更 ────────────────────────────────────┐ │
 │  │  observers: Observers      (观察者调度)          │ │
-│  │  removed_components        (移除事件缓冲)        │ │
+│  │  removed_components        (移除组件消息集)      │ │
 │  │  change_tick: AtomicU32    (变更时钟)            │ │
 │  │  last_change_tick / last_check_tick              │ │
 │  │  last_trigger_id           (触发器编号)          │ │

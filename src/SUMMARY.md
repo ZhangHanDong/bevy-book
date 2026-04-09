@@ -13,7 +13,6 @@
 
 # 第二部分：ECS 内核
 
-- [ECS 架构概论 — 从 OOP 到数据驱动](./ecs-fundamentals.md)
 - [第 3 章：World — 一切数据的容器](./ch03-world.md)
 - [第 4 章：Entity — 轻量级身份标识](./ch04-entity.md)
 - [第 5 章：Component 与 Storage — 数据与内存](./ch05-component-storage.md)
