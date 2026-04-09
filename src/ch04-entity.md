@@ -14,10 +14,10 @@ Entity 的 struct 定义出人意料地底层：
 #[repr(C, align(8))]
 pub struct Entity {
     #[cfg(target_endian = "little")]
-    index: EntityIndex,       // u32
+    index: EntityIndex,       // NonMaxU32 (u32 大小，但不能为 u32::MAX)
     generation: EntityGeneration, // u32
     #[cfg(target_endian = "big")]
-    index: EntityIndex,       // u32
+    index: EntityIndex,       // NonMaxU32
 }
 ```
 
@@ -95,7 +95,7 @@ graph TD
 每个活跃实体都有一个 `EntityLocation`，精确指向其数据在存储中的位置：
 
 ```rust
-// 源码: crates/bevy_ecs/src/entity/mod.rs:1208
+// 源码: crates/bevy_ecs/src/entity/mod.rs:1210
 pub struct EntityLocation {
     pub archetype_id: ArchetypeId,   // 哪个原型
     pub archetype_row: ArchetypeRow, // 原型内第几行

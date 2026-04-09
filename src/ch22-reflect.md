@@ -45,7 +45,7 @@ derive 宏为 `Player` 生成以下 trait 实现：
 
 ```rust
 // 源码: crates/bevy_reflect/src/reflect.rs (简化)
-pub trait PartialReflect: Any + Send + Sync {
+pub trait PartialReflect: DynamicTypePath + Send + Sync {
     fn reflect_ref(&self) -> ReflectRef;
     fn reflect_mut(&mut self) -> ReflectMut;
     fn try_apply(&mut self, value: &dyn PartialReflect) -> Result<(), ApplyError>;

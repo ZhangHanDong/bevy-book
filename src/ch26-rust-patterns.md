@@ -68,7 +68,7 @@ impl<F, R, P0, P1> SystemParamFunction<(P0, P1)> for F where F: Fn(P0, P1) -> R 
 all_tuples!(impl_system_param_tuple, 0, 16, P);
 ```
 
-这使得 `(Query<&A>, Res<B>, EventWriter<C>)` 自动成为合法的 SystemParam。
+这使得 `(Query<&A>, Res<B>, MessageWriter<C>)` 自动成为合法的 SystemParam。
 
 **为什么这样设计**：Rust 的 trait 系统是单态化的——编译器需要为每种参数组合生成具体代码。宏是在语言不支持可变参数泛型之前的唯一解决方案。16 的上限是实践中的平衡——超过 16 个参数的系统几乎不存在，但编译时间随参数数量指数增长。
 
@@ -135,7 +135,7 @@ pub struct UnsafeWorldCell<'w> {
 // 源码: crates/bevy_asset/src/handle.rs
 pub enum Handle<A: Asset> {
     Strong(Arc<StrongHandle>),
-    Weak(AssetId<A>),  // AssetId<A> 内含 PhantomData<A>
+    Uuid(Uuid, PhantomData<fn() -> A>),  // PhantomData 使 Handle<Mesh> ≠ Handle<Image>
 }
 
 // 源码: crates/bevy_time/src/time.rs
@@ -223,7 +223,7 @@ graph LR
 
 **为什么这样设计**：传统引擎用共享内存 + 锁来实现主线程与渲染线程的通信。Bevy 选择数据复制是因为 Rust 的所有权模型让"复制比共享更安全"成为自然选择——而 ECS 的列式存储使得批量 memcpy 非常高效。
 
-**这对游戏引擎意味着什么**：游戏渲染管线的核心挑战是主线程（游戏逻辑）和渲染线程需要访问同一份数据——但修改时机不同。传统引擎用双缓冲或三缓冲加锁来解决这个问题，但锁的引入会导致优先级反转、死锁风险、以及难以预测的帧时间抖动。Bevy 的双 World 架构从根本上消除了锁——Extract 阶段将需要渲染的数据从 Main World 复制到 Render World，之后两个 World 完全独立运行。在 ECS 的列式存储下，复制整列组件数据（如所有实体的 Transform）是一次连续的 memcpy，对现代 CPU 的内存带宽而言几乎是免费的。这种设计的代价是渲染数据总是比游戏逻辑落后一帧，但这个延迟在 60fps 下不可感知，且带来了确定性的帧时间——没有锁竞争导致的随机延迟。
+**这对游戏引擎意味着什么**：游戏渲染管线的核心挑战是主线程（游戏逻辑）和渲染线程需要访问同一份数据——但修改时机不同。传统引擎用共享内存 + 锁来协调这两类工作，而锁会把线程调度和等待时机引入帧时间路径。Bevy 的双 World 架构改成了"先提取、再独立运行"：Extract 阶段把渲染需要的数据从 Main World 复制到 Render World，之后两个 World 在各自的调度中前进。默认更新路径里，Main App 先执行，再对 Render SubApp 做 `extract` 和 `update`；只有额外启用 pipelined rendering 时，渲染线程才会与下一轮模拟重叠，表现出典型的流水线式帧间错位。ECS 的列式存储又让这类批量复制保持较好的顺序访问特性，因此 Bevy 能在不引入锁共享的前提下完成逻辑世界到渲染世界的数据同步。
 
 ## 26.7 编译期借用到运行时调度
 

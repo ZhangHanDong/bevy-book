@@ -44,7 +44,7 @@ members = [
 default = ["2d", "3d", "ui", "audio"]
 ```
 
-但总共提供了 **140+ 个 feature flags**，从图片格式 (`png`, `jpeg`, `webp`) 到渲染后端 (`webgl2`, `webgpu`)，从音频编解码 (`mp3`, `flac`, `vorbis`) 到平台支持 (`x11`, `wayland`, `android-game-activity`)。
+但总共提供了 **160+ 个 feature flags**，从图片格式 (`png`, `jpeg`, `webp`) 到渲染后端 (`webgl2`, `webgpu`)，从音频编解码 (`mp3`, `flac`, `vorbis`) 到平台支持 (`x11`, `wayland`, `android-game-activity`)。
 
 这种设计的意义在于：一个嵌入式系统可以只用 `bevy_ecs` 做数据管理；一个服务器可以用 `bevy_app` + `bevy_ecs` 做游戏逻辑而不引入任何渲染代码。模块化不是可选的美德，而是架构的基石。
 

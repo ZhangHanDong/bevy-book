@@ -6,10 +6,10 @@
 
 ## 3.1 World 的内部结构
 
-`World` struct 有 15 个字段，每一个都承担着明确的职责：
+`World` struct 有 16 个字段，每一个都承担着明确的职责：
 
 ```rust
-// 源码: crates/bevy_ecs/src/world/mod.rs:97
+// 源码: crates/bevy_ecs/src/world/mod.rs:98
 pub struct World {
     id: WorldId,
     pub(crate) entities: Entities,
@@ -110,12 +110,13 @@ fn run_systems(world: &mut World) {
 ### 解决方案：UnsafeWorldCell
 
 ```rust
-// 源码: crates/bevy_ecs/src/world/unsafe_world_cell.rs:28
-/// Variant of the [`World`] where resource and component accesses
-/// take `&self`, and the responsibility to avoid aliasing violations
-/// are given to the caller instead of being checked at compile-time
-/// by rust's unique XOR shared rule.
-pub struct UnsafeWorldCell<'w>(UnsafeCell<*mut World>, PhantomData<(&'w World, &'w UnsafeCell<World>)>);
+// 源码: crates/bevy_ecs/src/world/unsafe_world_cell.rs:84
+pub struct UnsafeWorldCell<'w> {
+    ptr: *mut World,
+    #[cfg(debug_assertions)]
+    allows_mutable_access: bool,
+    _marker: PhantomData<(&'w World, &'w UnsafeCell<World>)>,
+}
 ```
 
 `UnsafeWorldCell` 将 `&mut World` 的独占保证从编译期转移到了运行时：

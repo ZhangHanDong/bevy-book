@@ -10,7 +10,7 @@
 所有能挂载到 Entity 上的数据都必须实现 `Component` trait：
 
 ```rust
-// 源码: crates/bevy_ecs/src/component.rs (简化)
+// 源码: crates/bevy_ecs/src/component/mod.rs (简化)
 pub trait Component: Send + Sync + 'static {
     const STORAGE_TYPE: StorageType = StorageType::Table;
     type Mutability: ComponentMutability;
@@ -54,7 +54,7 @@ struct EntityName(String);
 每个 Component 类型选择一种存储策略。这个选择影响着内存布局和操作性能。
 
 ```rust
-// 源码: crates/bevy_ecs/src/component.rs
+// 源码: crates/bevy_ecs/src/component/mod.rs
 pub enum StorageType {
     Table,      // 列式存储，优化迭代
     SparseSet,  // 稀疏集合，优化增删
@@ -93,7 +93,7 @@ pub enum StorageType {
 
 经验法则：如果一个组件会在运行时频繁地被 `insert` 和 `remove`，考虑用 SparseSet 避免 Archetype 迁移的开销。
 
-为什么 Table 的缓存友好度如此重要？现代 CPU 的 L1 缓存行通常是 64 字节。当你遍历一个 `Column<Position>` 时（假设 Position 是 `Vec3` = 12 字节），每次 cache line 加载可以预取约 5 个 Position 值。CPU 的硬件预取器会检测到这种线性访问模式，在你实际读取之前就将后续的 cache line 从 L2/L3 甚至主存中拉入 L1。这意味着遍历几乎不会发生 cache miss。相比之下，SparseSet 的 dense 数组虽然也是连续的，但 sparse→dense 的间接查找在随机访问时会导致不可预测的内存访问模式，硬件预取器无法有效工作。当遍历 SparseSet 的 dense 数组时，性能与 Table 相当（都是线性扫描），但当需要从 Entity 查找特定组件时，SparseSet 需要一次 sparse 数组索引 + 一次 dense 数组索引，两次内存访问可能分别 miss。Table 在纯遍历场景下快 2-5 倍的差异主要来自这种缓存行为的差异，而非算法复杂度的差异——两者的时间复杂度都是 O(n)。这种性能特征与第 7 章中 Dense 和 Archetype 两种 Query 迭代路径的选择直接相关。
+为什么 Table 的缓存友好度如此重要？现代 CPU 的 L1 缓存行通常是 64 字节。当你遍历一个 `Column<Position>` 时（假设 Position 是 `Vec3` = 12 字节），每次 cache line 加载可以预取约 5 个 Position 值。CPU 的硬件预取器会检测到这种线性访问模式，在你实际读取之前就将后续的 cache line 从 L2/L3 甚至主存中拉入 L1。相比之下，SparseSet 的 dense 数组虽然也是连续的，但 sparse→dense 的间接查找在随机访问时会引入额外的跳转。当遍历 SparseSet 的 dense 数组时，两者都受益于线性扫描；但当需要从 Entity 查找特定组件时，SparseSet 还要经过 sparse 和 dense 两层索引。也正因为如此，Table 更偏向优化"大批量顺序遍历"，SparseSet 更偏向优化"频繁增删和按实体定位"。这种性能特征与第 7 章中 Dense 和 Archetype 两种 Query 迭代路径的选择直接相关。
 
 **要点**：Table 优化迭代，SparseSet 优化增删。默认选 Table，频繁增删选 SparseSet。
 
@@ -205,15 +205,16 @@ Column 中的 `data` 字段不是 `Vec<T>`——因为 ECS 需要在不知道具
 
 ```rust
 // 源码: crates/bevy_ecs/src/storage/blob_array.rs (简化)
-pub struct BlobArray {
-    item_layout: Layout,                    // 元素的 size + align
-    data: NonNull<u8>,                      // 裸指针指向堆内存
-    capacity: usize,                        // 已分配容量
-    drop: Option<unsafe fn(OwningPtr<Aligned>)>, // 元素的 drop 函数
+pub(super) struct BlobArray {
+    item_layout: Layout,                  // 元素的 size + align
+    data: NonNull<u8>,                    // 裸指针指向堆内存
+    pub drop: Option<unsafe fn(OwningPtr<'_>)>, // 元素的 drop 函数
+    #[cfg(debug_assertions)]
+    capacity: usize,                      // 已分配容量 (仅 debug 模式)
 }
 ```
 
-只有四个字段——`Layout` 记录每个元素的大小和对齐，`NonNull<u8>` 指向裸内存，`drop` 是可选的析构函数指针。
+注意 `pub(super)` 可见性——BlobArray 仅对 `storage` 模块内部可见，外部代码永远不会直接接触它。核心字段只有三个：`Layout` 记录每个元素的大小和对齐，`NonNull<u8>` 指向裸内存，`drop` 是可选的析构函数指针。`capacity` 仅在 debug 模式下存在，用于边界检查。
 
 元素访问通过指针算术实现：
 
